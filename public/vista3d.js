@@ -59,6 +59,30 @@
     return c;
   }
 
+  // ---------- modelli 3D (file .glb nella cartella /modelli) ----------
+  var MODELLI = {
+    bilico: { file: '/modelli/iveco_hi-way.glb', crediti: '“IVECO Hi-Way” di claries', link: 'https://sketchfab.com/3d-models/iveco-hi-way-211d5e310cdb4d92ba77e0590dec2c9c' },
+    motrice: { file: '/modelli/iveco_eurocargo.glb', crediti: '“1991 Iveco Euro Cargo” di zairiq', link: 'https://sketchfab.com/3d-models/1991-iveco-euro-cargo-e4ba5a534c024ed8904f0ec0218a3b8c' }
+  };
+  var inCaricamento = {};
+  function tipoMezzo(lunghezza) { return lunghezza <= 520 ? 'furgone' : (lunghezza <= 950 ? 'motrice' : 'bilico'); }
+  function caricaModello(tipo) {
+    var m = MODELLI[tipo];
+    if (!m || !window.THREE || !window.THREE.GLTFLoader) return Promise.resolve(null);
+    if (!inCaricamento[tipo]) {
+      inCaricamento[tipo] = new Promise(function (ok, ko) {
+        new window.THREE.GLTFLoader().load(m.file, function (g) { ok(g.scene); }, undefined, ko);
+      });
+      inCaricamento[tipo].catch(function () { delete inCaricamento[tipo]; });
+    }
+    return inCaricamento[tipo].then(function (sc) { return sc.clone(true); }, function () { return null; });
+  }
+  // Testo dei crediti richiesto dalla licenza CC BY 4.0
+  window.creditiModello3D = function (mezzo) {
+    var m = MODELLI[tipoMezzo(mezzo.lunghezza)];
+    return m ? 'Modello 3D ' + m.crediti + ', <a href="' + m.link + '" target="_blank" rel="noopener">Sketchfab</a>, licenza <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, adattato.' : '';
+  };
+
   function creaVista3D(contenitore, mezzo, piazzati, colori) {
     if (!window.THREE) {
       contenitore.innerHTML = '<p class="nota" style="padding:20px">La vista 3D non è disponibile: controlla la connessione internet.</p>';
@@ -66,8 +90,9 @@
     }
     var T = window.THREE;
     var L = mezzo.lunghezza, W = mezzo.larghezza, H = mezzo.altezza;
-    var tipo = L <= 520 ? 'furgone' : (L <= 950 ? 'motrice' : 'bilico');
+    var tipo = tipoMezzo(L);
     var pianale = tipo === 'furgone' ? 62 : (tipo === 'motrice' ? 112 : 125);
+    var pronto = false, distrutto = false, raggioBase = 1000, lungTot = 1000, altTot = 400, pianoTaglio = null;
     var ZC = W / 2;
 
     var risorse = [];
@@ -95,6 +120,7 @@
     renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = T.PCFSoftShadowMap;
+    renderer.localClippingEnabled = true;
     contenitore.appendChild(renderer.domElement);
 
     // Ambiente per i riflessi: cielo sfumato con due "pannelli luminosi"
@@ -305,7 +331,7 @@
     function cassone(opz) {
       var y0 = pianale;
       pezzo(box(L, 8, W), M.pavimento, L / 2, y0 - 4, ZC);
-      [ZC - 48, ZC + 48].forEach(function (z) { pezzo(box(L, 30, 10), M.telaio, L / 2, y0 - 23, z); });
+      [ZC - 48, ZC + 48].forEach(function (z) { pezzo(box(L, 14, 10), M.telaio, L / 2, y0 - 15, z); });
       // Longheroni laterali con striscia rifrangente e luci di posizione
       [-1, 1].forEach(function (s) {
         var z = s < 0 ? -4 : W + 4;
@@ -408,20 +434,68 @@
       return xF;
     }
 
-    // ---------- montaggio del mezzo ----------
+    // ---------- modelli 3D reali (GLB) ----------
+    function preparaModello(m, taglia) {
+      m.traverse(function (o) {
+        if (!o.isMesh) return;
+        o.castShadow = true; o.receiveShadow = true;
+        o.material = o.material.clone();
+        tieni(o.material);
+        if (taglia && taglia(o)) { o.material.clippingPlanes = [pianoTaglio]; o.material.clipShadows = true; }
+      });
+    }
+    // Iveco Hi-Way: il modello guarda verso -z, unità in metri
+    function montaTrattore(m) {
+      m.rotation.y = Math.PI / 2; m.scale.setScalar(100);
+      m.position.set(5, 0, ZC);            // ralla sotto il perno del semirimorchio
+      preparaModello(m);
+      gruppo.add(m);
+    }
+    // Iveco EuroCargo: teniamo cabina e ruote, il cassone originale viene tagliato via
+    function montaMotrice(m, xPosteriore) {
+      var off = 28;
+      m.rotation.y = -Math.PI / 2; m.scale.setScalar(100);
+      m.position.set(off, 0, ZC);
+      ['Elevator01', 'Elevator02', 'DoorL', 'DoorR'].forEach(function (n) { var o = m.getObjectByName(n); if (o) o.visible = false; });
+      pianoTaglio = new T.Plane(new T.Vector3(-1, 0, 0), 0);
+      pianoTaglio.userData = { x: -100 * 0.40 + off };
+      preparaModello(m, function (o) { return /MediumTruck01_1/.test(o.name) || /MediumTruck01_1/.test(o.parent && o.parent.name); });
+      gruppo.add(m);
+      m.updateMatrixWorld(true);
+      ['WheelBL', 'WheelBR'].forEach(function (n) {
+        var o = m.getObjectByName(n);
+        if (!o) return;
+        var bb = new T.Box3().setFromObject(o), c = bb.getCenter(new T.Vector3());
+        var wp = o.getWorldPosition(new T.Vector3());
+        wp.x += xPosteriore - c.x;
+        o.position.copy(o.parent.worldToLocal(wp));
+      });
+    }
+
+    function costruisci(mod) {
+    if (distrutto) return;
+    if (mod && tipo === 'bilico') pianale = 138;
+    if (mod && tipo === 'motrice') pianale = 98;
     var xMin;
     if (tipo === 'bilico') {
-      var r = 52, cabL = 232, cabH = 270, base = 108, xF = -cabL - 70;
-      [ZC - 42, ZC + 42].forEach(function (z) { pezzo(box(520, 28, 11), M.telaio, xF + 260, 80, z); });
-      pezzo(geoCil(46, 46, 9, 32), M.telaio, 120, pianale - 14, ZC);
-      cilindroX(30, 130, M.allu, xF + cabL + 80, 64, 30, 32);
-      [xF + cabL + 30, xF + cabL + 130].forEach(function (x) { cilindroX(31.5, 4, M.telaio, x, 64, 30, 32); });
-      pezzo(rbox(70, 50, 44, 4), M.plastica, xF + cabL + 80, 66, W - 30);
-      cabinaCamion(xF, cabL, cabH, base, W + 4, 62);
-      asse(xF + 68, r, false, 34);
-      parafangoArco(xF + 68, 22, r, 38); parafangoArco(xF + 68, W - 22, r, 38);
-      asse(128, r, true, 30);
-      [-1, 1].forEach(function (s) { pezzo(box(4, 52, 60), M.plastica, 128 + r + 14, 48, s < 0 ? 40 : W - 40); });
+      var r = mod ? 46 : 52;
+      if (mod) {
+        montaTrattore(mod);
+        xMin = -345;
+      } else {
+        var cabL = 232, cabH = 270, base = 108, xF = -cabL - 70;
+        [ZC - 42, ZC + 42].forEach(function (z) { pezzo(box(520, 28, 11), M.telaio, xF + 260, 80, z); });
+        pezzo(geoCil(46, 46, 9, 32), M.telaio, 120, pianale - 14, ZC);
+        cilindroX(30, 130, M.allu, xF + cabL + 80, 64, 30, 32);
+        [xF + cabL + 30, xF + cabL + 130].forEach(function (x) { cilindroX(31.5, 4, M.telaio, x, 64, 30, 32); });
+        pezzo(rbox(70, 50, 44, 4), M.plastica, xF + cabL + 80, 66, W - 30);
+        cabinaCamion(xF, cabL, cabH, base, W + 4, 62);
+        asse(xF + 68, r, false, 34);
+        parafangoArco(xF + 68, 22, r, 38); parafangoArco(xF + 68, W - 22, r, 38);
+        asse(128, r, true, 30);
+        [-1, 1].forEach(function (s) { pezzo(box(4, 52, 60), M.plastica, 128 + r + 14, 48, s < 0 ? 40 : W - 40); });
+        xMin = xF - 20;
+      }
       var assi = [L - 175, L - 306, L - 437];
       cassone({ piedini: 340, protezioni: [400, assi[2] - 75] });
       assi.forEach(function (x) { asse(x, r, false, 40); });
@@ -429,22 +503,31 @@
         pezzo(rbox(assi[0] - assi[2] + 130, 5, 56, 2), M.plastica, (assi[0] + assi[2]) / 2, 2 * r + 16, s < 0 ? 26 : W - 26);
         pezzo(box(4, 56, 50), M.plastica, assi[0] + r + 18, 48, s < 0 ? 26 : W - 26);
       });
-      xMin = xF - 20;
     } else if (tipo === 'motrice') {
-      var rm = 50, cl = 212, ch = 245, cb = 100, xc = -cl - 30;
-      [ZC - 42, ZC + 42].forEach(function (z) { pezzo(box(L + cl + 40, 26, 11), M.telaio, (L - cl - 30) / 2, 78, z); });
-      cilindroX(28, 110, M.allu, xc + cl + 90, 64, 30, 32);
-      cabinaCamion(xc, cl, ch, cb, W + 4, 34);
-      asse(xc + 62, rm, false, 32);
-      parafangoArco(xc + 62, 22, rm, 36); parafangoArco(xc + 62, W - 22, rm, 36);
-      var xr = L * 0.62;
-      cassone({ protezioni: [xc + cl + 160, xr - 70] });
-      asse(xr, rm, true, 30);
+      var xr = L * 0.62, rm = mod ? 37 : 50, inizioProtezioni;
+      if (mod) {
+        [ZC - 42, ZC + 42].forEach(function (z) { pezzo(box(L + 30, 18, 11), M.telaio, L / 2 - 15, pianale - 31, z); });
+        cilindroX(26, 100, M.allu, 95, 52, 30, 32);
+        [50, 140].forEach(function (x) { cilindroX(27.5, 4, M.telaio, x, 52, 30, 32); });
+        montaMotrice(mod, xr);
+        inizioProtezioni = 165;
+        xMin = -215;
+      } else {
+        var cl = 212, ch = 245, cb = 100, xc = -cl - 30;
+        [ZC - 42, ZC + 42].forEach(function (z) { pezzo(box(L + cl + 40, 26, 11), M.telaio, (L - cl - 30) / 2, 78, z); });
+        cilindroX(28, 110, M.allu, xc + cl + 90, 64, 30, 32);
+        cabinaCamion(xc, cl, ch, cb, W + 4, 34);
+        asse(xc + 62, rm, false, 32);
+        parafangoArco(xc + 62, 22, rm, 36); parafangoArco(xc + 62, W - 22, rm, 36);
+        asse(xr, rm, true, 30);
+        inizioProtezioni = xc + cl + 160;
+        xMin = xc - 20;
+      }
+      cassone({ protezioni: [inizioProtezioni, xr - rm - 25] });
       [-1, 1].forEach(function (s) {
-        pezzo(rbox(150, 5, 76, 2), M.plastica, xr, 2 * rm + 14, s < 0 ? 36 : W - 36);
-        pezzo(box(4, 52, 64), M.plastica, xr + rm + 16, 46, s < 0 ? 36 : W - 36);
+        pezzo(rbox(rm * 3, 5, 76, 2), M.plastica, xr, 2 * rm + 14, s < 0 ? 36 : W - 36);
+        pezzo(box(4, rm + 4, 64), M.plastica, xr + rm + 16, rm - 4 + (rm + 4) / 2 - rm / 2 + 6, s < 0 ? 36 : W - 36);
       });
-      xMin = xc - 20;
     } else {
       xMin = furgone() - 20;
     }
@@ -519,7 +602,7 @@
 
     // ---------- terreno, ombre, luci ----------
     var xMax = L + 30;
-    var lungTot = xMax - xMin, altTot = pianale + H + (tipo === 'bilico' ? 60 : 30);
+    lungTot = xMax - xMin; altTot = pianale + H + (tipo === 'bilico' ? 60 : 30);
     var cx0 = (xMin + xMax) / 2;
     var terreno = pezzo(tieni(new T.CircleGeometry(lungTot * 1.1, 64)),
       tieni(new T.MeshStandardMaterial({ color: col('#c9ced4'), roughness: 0.95, transparent: true, alphaMap: texture(disegnaSfumatura('#ffffff', '#000000')), depthWrite: false })),
@@ -543,14 +626,22 @@
     sole.shadow.bias = -0.0005; sole.shadow.normalBias = 1.2; sole.shadow.radius = 3;
     scena.add(sole);
 
+    raggioBase = Math.sqrt(lungTot * lungTot + W * W + altTot * altTot) * (tipo === 'furgone' ? 1.55 : 1.3);
+    if (pianoTaglio) pianoTaglio.constant = pianoTaglio.userData.x + gruppo.position.x;
+    pronto = true;
+    var attesa = contenitore.querySelector('.attesa3d');
+    if (attesa) attesa.remove();
+    ripristina();
+    }
+
     // ---------- telecamera orbitale ----------
-    var raggioBase = Math.sqrt(lungTot * lungTot + W * W + altTot * altTot) * (tipo === 'furgone' ? 1.55 : 1.3);
-    var TETA0 = -0.58, FI0 = 1.12;
+    var TETA0 = -2.3, FI0 = 1.17;
     var stato = { teta: TETA0, fi: FI0, raggio: raggioBase };
     function dissolvi(materiali, op) {
       materiali.forEach(function (m) { m.opacity = op; m.depthWrite = op > 0.97; });
     }
     function posiziona() {
+      if (!pronto) return;
       stato.fi = Math.max(0.12, Math.min(1.5, stato.fi));
       stato.raggio = Math.max(raggioBase * 0.25, Math.min(raggioBase * 3, stato.raggio));
       camera.position.set(
@@ -614,12 +705,17 @@
     var osservatore = new ResizeObserver(ridimensiona);
     osservatore.observe(contenitore);
     ridimensiona();
-    posiziona();
+    var avviso = document.createElement('div');
+    avviso.className = 'attesa3d';
+    avviso.textContent = 'Preparo il mezzo…';
+    contenitore.appendChild(avviso);
+    caricaModello(tipo).then(costruisci);
 
     return {
       ripristina: ripristina,
       vista: function (teta, fi, zoom) { stato.teta = teta; stato.fi = fi; stato.raggio = raggioBase * (zoom || 1); posiziona(); },
       distruggi: function () {
+        distrutto = true;
         osservatore.disconnect();
         risorse.forEach(function (x) { if (x && x.dispose) x.dispose(); });
         renderer.dispose();

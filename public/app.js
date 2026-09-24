@@ -423,7 +423,8 @@
           '<section class="vista"><div class="vista-testa"><h3>Vista 3D</h3><div class="riga-azioni no-stampa">' +
             '<span class="nota">Trascina per ruotare, rotellina per lo zoom</span>' +
             '<button class="btn btn-piccolo" data-cam="lato">Di lato</button><button class="btn btn-piccolo" data-cam="porte">Dalle porte</button><button class="btn btn-piccolo" data-cam="reset">Prospettiva</button>' +
-          '</div></div><div class="tela3d" id="tela3d"></div><div class="legenda">' + legenda + '</div></section>' +
+          '</div></div><div class="tela3d" id="tela3d"></div><div class="legenda">' + legenda + '</div>' +
+          (window.creditiModello3D && window.creditiModello3D(mezzo) ? '<div class="crediti">' + window.creditiModello3D(mezzo) + '</div>' : '') + '</section>' +
           '<section class="vista"><div class="vista-testa"><h3>Vista dall’alto, strato per strato</h3><div class="strati" id="strati"></div></div>' +
           '<div class="pianta"><div id="pianta"></div><div class="orientamento"><span>◀ Cabina</span><span>Porte ▶</span></div></div>' +
           '<div class="legenda" id="legenda-strato"></div></section>' +

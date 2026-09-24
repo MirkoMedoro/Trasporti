@@ -437,7 +437,7 @@
     box.querySelectorAll('[data-cam]').forEach(function (b) {
       b.onclick = function () {
         if (!stato.vista3d || !stato.vista3d.vista) return;
-        if (b.dataset.cam === 'lato') stato.vista3d.vista(-Math.PI / 2, 1.45);
+        if (b.dataset.cam === 'lato') stato.vista3d.vista(-Math.PI / 2, 1.45, 0.78);
         else if (b.dataset.cam === 'porte') stato.vista3d.vista(0.04, 1.4, 0.95);
         else stato.vista3d.ripristina();
       };

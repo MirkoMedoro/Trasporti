@@ -1,0 +1,19 @@
+{
+  "name": "stiva-gestionale-trasporti",
+  "version": "1.0.0",
+  "description": "Gestionale per aziende di trasporto: piano di carico, mezzi, multi-azienda",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.12.0"
+  }
+}

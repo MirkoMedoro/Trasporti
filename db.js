@@ -96,6 +96,8 @@ async function inizializza() {
       creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_complessi_azienda ON complessi(azienda_id);
+    ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS proprieta TEXT NOT NULL DEFAULT 'proprio';
+    ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS ditta TEXT;
     CREATE INDEX IF NOT EXISTS idx_utenti_azienda ON utenti(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_mezzi_azienda ON mezzi(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_colli_azienda ON colli_salvati(azienda_id);

@@ -215,6 +215,7 @@
     return Math.round((new Date(iso + 'T00:00:00') - oggi) / 86400000);
   }
   function statoRevisione(m) {
+    if (m.proprieta === 'padroncino') return { cls: 'padroncino', testo: 'Non gestita', g: null };
     var g = giorniA(m.scadenza_revisione);
     if (g === null) return { cls: 'nd', testo: 'Da inserire', g: null };
     if (g < 0) return { cls: 'scaduta', testo: 'Scaduta da ' + (-g) + (g === -1 ? ' giorno' : ' giorni'), g: g };
@@ -256,7 +257,8 @@
     tutte.forEach(function (u) {
       u.volume = 0; u.portata = 0;
       u.scomparti.forEach(function (s) { u.volume += s.lunghezza * s.larghezza * s.altezza; u.portata += s.portata; });
-      u.scadute = u.mezzi.filter(function (m) { var g = giorniA(m.scadenza_revisione); return g !== null && g < 0; });
+      u.scadute = u.mezzi.filter(function (m) { return statoRevisione(m).cls === 'scaduta'; });
+      u.padroncino = u.mezzi.some(function (m) { return m.proprieta === 'padroncino'; });
     });
     return tutte;
   }
@@ -272,6 +274,7 @@
   ];
 
   function badgeRevisione(m) {
+    if (m.proprieta === 'padroncino') return '<span class="nota">Non gestita</span>';
     var s = statoRevisione(m);
     return '<span class="etichetta rev-' + s.cls + '">' + s.testo + '</span>' + (m.scadenza_revisione ? '<div class="nota">' + dataIt(m.scadenza_revisione) + '</div>' : '');
   }
@@ -286,7 +289,9 @@
 
       var righe = ordinati.map(function (x) {
         var c = CATEGORIE[x.categoria] || { nome: '–' };
-        return '<tr><td><span class="tipo-mezzo">' + c.nome + '</span></td><td><b>' + esc(x.nome) + '</b></td><td>' + esc(x.targa || '') + '</td>' +
+        return '<tr><td><span class="tipo-mezzo">' + c.nome + '</span></td><td><b>' + esc(x.nome) + '</b>' +
+          (x.proprieta === 'padroncino' ? ' <span class="etichetta etichetta-padroncino">Padroncino</span>' + (x.ditta ? '<div class="nota">' + esc(x.ditta) + '</div>' : '') : '') +
+          '</td><td>' + esc(x.targa || '') + '</td>' +
           '<td class="num">' + (x.lunghezza ? x.lunghezza + ' × ' + x.larghezza + ' × ' + x.altezza : '–') + '</td>' +
           '<td class="num">' + (x.portata ? num(x.portata) : '–') + '</td>' +
           '<td class="num">' + (x.consumo ? num(x.consumo, 1) : '–') + '</td>' +
@@ -322,6 +327,12 @@
             '<label class="campo">Nome<input type="text" name="nome" placeholder="Es. Iveco di Mario" value="' + esc(m ? m.nome : '') + '"></label>' +
             '<label class="campo">Targa<input type="text" name="targa" value="' + esc(m ? m.targa : '') + '"></label>' +
           '</div>' +
+          '<div class="scelta-proprieta">' +
+            '<span class="campo-titolo">Proprietà</span>' +
+            '<label class="spunta"><input type="radio" name="proprieta" value="proprio"' + (!m || m.proprieta !== 'padroncino' ? ' checked' : '') + '> Mezzo proprio dell’azienda</label>' +
+            '<label class="spunta"><input type="radio" name="proprieta" value="padroncino"' + (m && m.proprieta === 'padroncino' ? ' checked' : '') + '> Padroncino (mezzo a disposizione, non di proprietà)</label>' +
+            '<label class="campo" id="campo-ditta"><span>Padroncino o ditta (facoltativo)</span><input type="text" name="ditta" value="' + esc(m && m.ditta ? m.ditta : '') + '"></label>' +
+          '</div>' +
           '<fieldset class="gruppo-campi" id="campi-vano"><legend>Vano di carico</legend><div class="griglia-form">' +
             '<label class="campo">Lunghezza (cm)<input type="number" name="lunghezza" min="50" value="' + (m && m.lunghezza ? m.lunghezza : '') + '"></label>' +
             '<label class="campo">Larghezza (cm)<input type="number" name="larghezza" min="50" value="' + (m && m.larghezza ? m.larghezza : '') + '"></label>' +
@@ -331,7 +342,7 @@
           '<fieldset class="gruppo-campi" id="campi-motore"><legend>Consumi</legend><div class="griglia-form">' +
             '<label class="campo">Consumo medio (l/100 km)<input type="number" name="consumo" min="1" step="0.1" placeholder="facoltativo" value="' + (m && m.consumo ? m.consumo : '') + '"></label>' +
           '</div></fieldset>' +
-          '<fieldset class="gruppo-campi"><legend>Revisione</legend><div class="griglia-form">' +
+          '<fieldset class="gruppo-campi" id="campi-revisione"><legend>Revisione</legend><div class="griglia-form">' +
             '<label class="campo">Data ultima revisione<input type="date" name="ultima_revisione" value="' + (m && m.ultima_revisione ? m.ultima_revisione : '') + '"></label>' +
             '<label class="campo" style="grid-column:span 2">Officina o centro dell’ultima revisione<input type="text" name="officina_revisione" value="' + esc(m && m.officina_revisione ? m.officina_revisione : '') + '"></label>' +
             '<label class="campo">Scadenza revisione<input type="date" name="scadenza_revisione" value="' + (m && m.scadenza_revisione ? m.scadenza_revisione : '') + '"></label>' +
@@ -371,6 +382,13 @@
       }
       selCat.onchange = aggiornaCampi;
       aggiornaCampi();
+      function aggiornaProprieta() {
+        var padr = form.elements.proprieta.value === 'padroncino';
+        main.querySelector('#campi-revisione').hidden = padr;
+        main.querySelector('#campo-ditta').hidden = padr ? false : true;
+      }
+      Array.prototype.forEach.call(form.querySelectorAll('[name=proprieta]'), function (r) { r.onchange = aggiornaProprieta; });
+      aggiornaProprieta();
       selMod.onchange = function () {
         var x = MODELLI_MEZZO[selMod.value];
         if (!x) return;
@@ -496,7 +514,7 @@
       var p = stato.piano;
       if (!unita.some(function (u) { return u.chiave === p.unita; })) p.unita = unita[0].chiave;
       if (!p.righe.length) p.righe.push(Object.assign({}, MODELLI_COLLO.eur, { quantita: 10 }));
-      function opzione(u) { return '<option value="' + u.chiave + '"' + (u.chiave === p.unita ? ' selected' : '') + '>' + esc(u.nome) + (u.scadute.length ? ' – revisione scaduta' : '') + '</option>'; }
+      function opzione(u) { return '<option value="' + u.chiave + '"' + (u.chiave === p.unita ? ' selected' : '') + '>' + esc(u.nome) + (u.padroncino ? ' – padroncino' : '') + (u.scadute.length ? ' – revisione scaduta' : '') + '</option>'; }
       var singoli = unita.filter(function (u) { return !u.complesso; }), complessi = unita.filter(function (u) { return u.complesso; });
 
       var main = guscio('carico',
@@ -1257,7 +1275,9 @@
 
   // ---------- Scadenze (revisioni) ----------
   function vistaScadenze() {
-    caricaMezzi().then(function (mezzi) {
+    caricaMezzi().then(function (tutti) {
+      var mezzi = tutti.filter(function (m) { return m.proprieta !== 'padroncino'; });
+      var padroncini = tutti.length - mezzi.length;
       var filtro = stato.filtroScadenze || 'tutte';
       var elenco = mezzi.map(function (m) { return { m: m, s: statoRevisione(m) }; });
       elenco.sort(function (a, b) {
@@ -1288,7 +1308,8 @@
               '<td class="num no-stampa"><button class="btn btn-piccolo" data-registra="' + m.id + '">Registra revisione</button></td></tr>';
           }).join('') : '<tr><td colspan="7" class="nota">Nessun mezzo in questo elenco.</td></tr>') +
           '</tbody></table></div>' +
-          '<p class="nota" style="margin-top:14px">Mezzi pesanti e rimorchi oltre 3,5 t si revisionano ogni anno; i veicoli fino a 3,5 t dopo 4 anni dall’immatricolazione e poi ogni 2 anni. Fa sempre fede la carta di circolazione.</p>'
+          (padroncini ? '<p class="nota" style="margin-top:14px">' + (padroncini === 1 ? 'Un mezzo di padroncino non è incluso: la sua revisione non è gestita dall’azienda.' : padroncini + ' mezzi di padroncini non sono inclusi: la loro revisione non è gestita dall’azienda.') + '</p>' : '') +
+          '<p class="nota" style="margin-top:6px">Mezzi pesanti e rimorchi oltre 3,5 t si revisionano ogni anno; i veicoli fino a 3,5 t dopo 4 anni dall’immatricolazione e poi ogni 2 anni. Fa sempre fede la carta di circolazione.</p>'
           : '<div class="vuoto"><h2>Nessun mezzo inserito</h2><p>Aggiungi i mezzi della flotta con la data di scadenza della revisione.</p><a class="btn btn-primario" href="#/mezzi">Aggiungi un mezzo</a></div>'));
 
       var st = main.querySelector('#stampa');

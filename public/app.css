@@ -259,3 +259,9 @@ tr.riga-scelta td { background: #fff8e0; }
 .testa-vano { margin-bottom: 14px; }
 .testa-vano h2 { margin-bottom: 4px; }
 .misure-mezzo { line-height: 1.5; }
+.scelta-proprieta { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; margin-top: 16px; }
+.scelta-proprieta .campo-titolo { font-size: 13px; color: var(--grigio); font-weight: 500; width: 100%; }
+.scelta-proprieta .spunta input { width: 17px; height: 17px; }
+.scelta-proprieta #campo-ditta { min-width: 260px; }
+.scelta-proprieta #campo-ditta[hidden] { display: none; }
+.etichetta-padroncino { background: #eef1f5; border-color: #cfd6df; color: #3d4652; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }

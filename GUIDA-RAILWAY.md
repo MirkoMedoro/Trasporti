@@ -82,3 +82,28 @@ la voce **Usage** per il consumo reale.
   ma i dati restano salvati.
 - **Titolare**: gestisce mezzi, piani e gli utenti della sua azienda.
 - **Operatore**: calcola, salva e stampa i piani di carico, gestisce i mezzi.
+
+## Percorsi per camion (OpenRouteService)
+
+Senza configurare nulla, "Viaggi e costi" funziona già con servizi pubblici
+gratuiti: la ricerca indirizzi si fa premendo Invio e il percorso è calcolato
+per un'automobile. Va bene per le prove.
+
+Per il percorso da camion (esclude strade con limiti di altezza, larghezza o
+peso) e la ricerca che suggerisce mentre scrivi:
+
+1. Registrati su **https://openrouteservice.org** (gratuito).
+2. Nella **Dashboard** crea una chiave (**Request a token**, piano Standard).
+3. Su Railway, nel riquadro del programma, scheda **Variables**, aggiungi
+   `ORS_API_KEY` con la chiave copiata, poi clicca **Deploy**.
+
+Il piano gratuito ha limiti giornalieri di richieste: controlla quelli
+aggiornati sul sito. Prima di vendere il programma a molte aziende conviene
+un piano a pagamento, sia per i percorsi sia per le mappe (le piastrelle di
+OpenStreetMap sono pensate per un uso leggero).
+
+## Funzioni per azienda
+
+Nel pannello **Aziende clienti** ogni azienda ha le spunte delle funzioni
+("Piano di carico", "Viaggi e costi"). Togliendo la spunta, la funzione
+sparisce dal menu di quell'azienda e viene bloccata anche sul server.

@@ -1,11 +1,11 @@
 // Piani di carico salvati
 const express = require('express');
 const { pool } = require('../db');
-const { richiediLogin, richiediAzienda } = require('../auth');
+const { richiediLogin, richiediAzienda, richiediFunzione } = require('../auth');
 const { testo } = require('../validazione');
 
 const r = express.Router();
-r.use(richiediLogin, richiediAzienda);
+r.use(richiediLogin, richiediAzienda, richiediFunzione('carico'));
 
 r.get('/', async (req, res, next) => {
   try {

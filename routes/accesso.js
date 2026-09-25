@@ -58,7 +58,7 @@ r.post('/logout', (req, res) => { chiudiSessione(res); res.json({ ok: true }); }
 
 r.get('/me', richiediLogin, (req, res) => {
   const u = req.utente;
-  res.json({ id: u.id, nome: u.nome, email: u.email, ruolo: u.ruolo, azienda: u.azienda_nome || null });
+  res.json({ id: u.id, nome: u.nome, email: u.email, ruolo: u.ruolo, azienda: u.azienda_nome || null, funzioni: u.funzioni });
 });
 
 r.post('/me/password', richiediLogin, async (req, res, next) => {

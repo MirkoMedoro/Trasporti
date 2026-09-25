@@ -26,6 +26,9 @@ app.use('/api/utenti', require('./routes/utenti'));
 app.use('/api/mezzi', require('./routes/mezzi'));
 app.use('/api/colli', require('./routes/colli'));
 app.use('/api/piani', require('./routes/piani'));
+app.use('/api/percorsi', require('./routes/percorsi'));
+app.use('/api/viaggi', require('./routes/viaggi'));
+app.use('/api/impostazioni', require('./routes/impostazioni'));
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));

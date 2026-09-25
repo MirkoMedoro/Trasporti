@@ -1,11 +1,11 @@
 // Colli ricorrenti salvati dall'azienda (es. "Bancale acqua", "Scatola 60x40")
 const express = require('express');
 const { pool } = require('../db');
-const { richiediLogin, richiediAzienda } = require('../auth');
+const { richiediLogin, richiediAzienda, richiediFunzione } = require('../auth');
 const { intero, testo } = require('../validazione');
 
 const r = express.Router();
-r.use(richiediLogin, richiediAzienda);
+r.use(richiediLogin, richiediAzienda, richiediFunzione('carico'));
 
 r.get('/', async (req, res, next) => {
   try {

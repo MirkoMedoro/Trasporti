@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { pool } = require('../db');
 const { richiediLogin, richiediRuolo } = require('../auth');
 const { testo, emailValida } = require('../validazione');
+const { FUNZIONI, funzioniAttive } = require('../funzioni');
 
 const r = express.Router();
 r.use(richiediLogin, richiediRuolo('superadmin'));
@@ -11,13 +12,14 @@ r.use(richiediLogin, richiediRuolo('superadmin'));
 r.get('/', async (req, res, next) => {
   try {
     const { rows } = await pool.query(`
-      SELECT a.id, a.nome, a.attiva, a.creata_il,
+      SELECT a.id, a.nome, a.attiva, a.creata_il, a.funzioni,
         (SELECT COUNT(*)::int FROM utenti u WHERE u.azienda_id=a.id) AS utenti,
         (SELECT COUNT(*)::int FROM mezzi m WHERE m.azienda_id=a.id) AS mezzi,
         (SELECT COUNT(*)::int FROM piani p WHERE p.azienda_id=a.id) AS piani,
         (SELECT u.email FROM utenti u WHERE u.azienda_id=a.id AND u.ruolo='admin' ORDER BY u.id LIMIT 1) AS email_titolare
       FROM aziende a ORDER BY a.nome`);
-    res.json(rows);
+    rows.forEach((r) => { r.funzioni = funzioniAttive(r.funzioni); });
+    res.json({ aziende: rows, funzioni: FUNZIONI });
   } catch (e) { next(e); }
 });
 
@@ -55,6 +57,11 @@ r.patch('/:id', async (req, res, next) => {
     }
     const nome = testo(req.body.nome, 150);
     if (nome) await pool.query('UPDATE aziende SET nome=$1 WHERE id=$2', [nome, id]);
+    if (req.body.funzioni && typeof req.body.funzioni === 'object') {
+      const f = {};
+      FUNZIONI.forEach((x) => { if (typeof req.body.funzioni[x.id] === 'boolean') f[x.id] = req.body.funzioni[x.id]; });
+      await pool.query('UPDATE aziende SET funzioni = funzioni || $1::jsonb WHERE id=$2', [JSON.stringify(f), id]);
+    }
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

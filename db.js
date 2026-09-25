@@ -63,6 +63,19 @@ async function inizializza() {
       creato_da INT REFERENCES utenti(id) ON DELETE SET NULL,
       creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS viaggi (
+      id SERIAL PRIMARY KEY,
+      azienda_id INT NOT NULL REFERENCES aziende(id) ON DELETE CASCADE,
+      nome TEXT NOT NULL,
+      dati JSONB NOT NULL,
+      creato_da INT REFERENCES utenti(id) ON DELETE SET NULL,
+      creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    -- Aggiunte successive (sicure anche su un database già esistente)
+    ALTER TABLE aziende ADD COLUMN IF NOT EXISTS funzioni JSONB NOT NULL DEFAULT '{}';
+    ALTER TABLE aziende ADD COLUMN IF NOT EXISTS impostazioni JSONB NOT NULL DEFAULT '{}';
+    ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS consumo NUMERIC(5,1);
+    CREATE INDEX IF NOT EXISTS idx_viaggi_azienda ON viaggi(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_utenti_azienda ON utenti(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_mezzi_azienda ON mezzi(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_colli_azienda ON colli_salvati(azienda_id);

@@ -2,6 +2,7 @@
 // così se un'azienda viene sospesa o un utente disattivato, l'effetto è immediato.
 const jwt = require('jsonwebtoken');
 const { pool } = require('./db');
+const { funzioniAttive } = require('./funzioni');
 
 const SEGRETO = process.env.JWT_SECRET || 'cambia-questo-segreto';
 if (!process.env.JWT_SECRET) {
@@ -33,7 +34,7 @@ async function richiediLogin(req, res, next) {
 
     const { rows } = await pool.query(
       `SELECT u.id, u.azienda_id, u.email, u.nome, u.ruolo, u.attivo,
-              a.nome AS azienda_nome, a.attiva AS azienda_attiva
+              a.nome AS azienda_nome, a.attiva AS azienda_attiva, a.funzioni AS azienda_funzioni
          FROM utenti u LEFT JOIN aziende a ON a.id = u.azienda_id
         WHERE u.id = $1`, [dati.uid]);
     const u = rows[0];
@@ -41,6 +42,7 @@ async function richiediLogin(req, res, next) {
     if (u.ruolo !== 'superadmin' && !u.azienda_attiva) {
       return res.status(403).json({ errore: "L'account della tua azienda è sospeso. Contatta l'assistenza." });
     }
+    u.funzioni = funzioniAttive(u.azienda_funzioni);
     req.utente = u;
     next();
   } catch (e) { next(e); }
@@ -59,4 +61,14 @@ function richiediRuolo(...ruoli) {
   };
 }
 
-module.exports = { creaSessione, chiudiSessione, richiediLogin, richiediAzienda, richiediRuolo };
+// Blocca le funzioni non incluse nel piano dell'azienda
+function richiediFunzione(id) {
+  return (req, res, next) => {
+    if (!req.utente.funzioni || req.utente.funzioni[id] === false) {
+      return res.status(403).json({ errore: 'Questa funzione non è inclusa nel tuo piano.' });
+    }
+    next();
+  };
+}
+
+module.exports = { creaSessione, chiudiSessione, richiediLogin, richiediAzienda, richiediRuolo, richiediFunzione };

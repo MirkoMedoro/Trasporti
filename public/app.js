@@ -24,6 +24,7 @@
     piani: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg>',
     utenti: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.3-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.7 3 2.5 3.5 5.2"/></svg>',
     aziende: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21V8l6-4v17M9 21V10l12 3v8M3 21h18M13 16h4"/></svg>',
+    viaggi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 18h7a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7"/></svg>',
     account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.2-7 8-7s7 2.5 8 7"/></svg>'
   };
 
@@ -32,7 +33,9 @@
     mezzi: [],
     colliSalvati: [],
     piano: { mezzoId: null, righe: [], risultato: null, mezzo: null },
-    vista3d: null
+    vista3d: null,
+    viaggio: null,
+    mappa: null
   };
 
   // ---------- utilità ----------
@@ -73,7 +76,11 @@
     new FormData(form).forEach(function (v, k) { o[k] = v; });
     return o;
   }
-  function chiudi3D() { if (stato.vista3d) { stato.vista3d.distruggi(); stato.vista3d = null; } }
+  function chiudi3D() {
+    if (stato.vista3d) { stato.vista3d.distruggi(); stato.vista3d = null; }
+    if (stato.mappa) { stato.mappa.remove(); stato.mappa = null; }
+  }
+  function haFunzione(id) { return !stato.utente || !stato.utente.funzioni || stato.utente.funzioni[id] !== false; }
 
   // ---------- accesso ----------
   function paginaAccesso(titolo, sottotitolo, campiHtml, pulsante, invio) {
@@ -131,7 +138,11 @@
   function vociMenu() {
     var r = stato.utente.ruolo;
     if (r === 'superadmin') return [['aziende', 'Aziende clienti'], ['account', 'Il mio account']];
-    var v = [['home', 'Home'], ['carico', 'Piano di carico'], ['mezzi', 'Mezzi'], ['piani', 'Piani salvati']];
+    var v = [['home', 'Home']];
+    if (haFunzione('carico')) v.push(['carico', 'Piano di carico']);
+    if (haFunzione('viaggi')) v.push(['viaggi', 'Viaggi e costi']);
+    v.push(['mezzi', 'Mezzi']);
+    if (haFunzione('carico')) v.push(['piani', 'Piani salvati']);
     if (r === 'admin') v.push(['utenti', 'Utenti']);
     v.push(['account', 'Il mio account']);
     return v;
@@ -162,11 +173,11 @@
 
   // ---------- Home ----------
   function vistaHome() {
-    var tessere = [
-      ['carico', 'Piano di carico', 'Inserisci i colli e ottieni la disposizione migliore.'],
-      ['mezzi', 'Mezzi', 'Le misure del vano e la portata di ogni tuo mezzo.'],
-      ['piani', 'Piani salvati', 'Riapri, stampa o elimina i carichi già calcolati.']
-    ];
+    var tessere = [];
+    if (haFunzione('carico')) tessere.push(['carico', 'Piano di carico', 'Inserisci i colli e ottieni la disposizione migliore.']);
+    if (haFunzione('viaggi')) tessere.push(['viaggi', 'Viaggi e costi', 'Km del percorso, costo del viaggio e prezzo di pareggio.']);
+    tessere.push(['mezzi', 'Mezzi', 'Misure, portata e consumo di ogni tuo mezzo.']);
+    if (haFunzione('carico')) tessere.push(['piani', 'Piani salvati', 'Riapri, stampa o elimina i carichi già calcolati.']);
     if (stato.utente.ruolo === 'admin') tessere.push(['utenti', 'Utenti', 'Chi del tuo personale può accedere.']);
     guscio('home',
       '<div class="testata"><div><h1>Buongiorno, ' + esc(stato.utente.nome.split(' ')[0]) + '</h1>' +
@@ -186,13 +197,14 @@
         return '<tr><td><b>' + esc(x.nome) + '</b></td><td>' + esc(x.targa || '') + '</td>' +
           '<td class="num">' + x.lunghezza + ' × ' + x.larghezza + ' × ' + x.altezza + '</td>' +
           '<td class="num">' + num(x.portata) + '</td>' +
+          '<td class="num">' + (x.consumo ? num(x.consumo, 1) : '–') + '</td>' +
           '<td class="num"><button class="btn-testo" data-mod="' + x.id + '">Modifica</button>' +
           '<button class="btn-testo pericolo" data-del="' + x.id + '">Elimina</button></td></tr>';
       }).join('');
       var main = guscio('mezzi',
         '<div class="testata"><div><h1>Mezzi</h1><p>Salva le misure interne del vano di carico. Le troverai pronte quando calcoli un piano.</p></div></div>' +
         (mezzi.length ?
-          '<div class="pannello tabella-scroll"><table><thead><tr><th>Nome</th><th>Targa</th><th class="num">Vano L × P × H (cm)</th><th class="num">Portata (kg)</th><th></th></tr></thead><tbody>' + righe + '</tbody></table></div>'
+          '<div class="pannello tabella-scroll"><table><thead><tr><th>Nome</th><th>Targa</th><th class="num">Vano L × P × H (cm)</th><th class="num">Portata (kg)</th><th class="num">Consumo (l/100 km)</th><th></th></tr></thead><tbody>' + righe + '</tbody></table></div>'
           : '') +
         '<form class="pannello" id="form-mezzo" novalidate>' +
           '<div class="testata" style="margin-bottom:16px"><h2>' + (m ? 'Modifica ' + esc(m.nome) : 'Nuovo mezzo') + '</h2>' +
@@ -206,6 +218,7 @@
             '<label class="campo">Larghezza vano (cm)<input type="number" name="larghezza" min="50" value="' + (m ? m.larghezza : '') + '"></label>' +
             '<label class="campo">Altezza vano (cm)<input type="number" name="altezza" min="50" value="' + (m ? m.altezza : '') + '"></label>' +
             '<label class="campo">Portata utile (kg)<input type="number" name="portata" min="1" value="' + (m ? m.portata : '') + '"></label>' +
+            '<label class="campo">Consumo medio (l/100 km)<input type="number" name="consumo" min="1" step="0.1" placeholder="facoltativo" value="' + (m && m.consumo ? m.consumo : '') + '"></label>' +
           '</div>' +
           '<p class="nota" style="margin-top:12px">I modelli hanno misure indicative: controlla sempre quelle reali del tuo mezzo.</p>' +
           '<p class="errore" id="err"></p>' +
@@ -543,6 +556,392 @@
     }).catch(errorePagina);
   }
 
+  // ---------- Viaggi e costi ----------
+  var CAMPI_COSTI = [
+    ['gasolio', 'Gasolio (€/litro)', '0.01'],
+    ['consumo', 'Consumo (litri ogni 100 km)', '0.1'],
+    ['costoOra', 'Costo autista (€/ora)', '0.5'],
+    ['velocita', 'Velocità media (km/h)', '1'],
+    ['oreSoste', 'Carico, scarico e attese (ore)', '0.25'],
+    ['trasferta', 'Trasferta autista (€ per notte fuori)', '1'],
+    ['altriKm', 'Altri costi del mezzo (€/km)', '0.01'],
+    ['pedaggi', 'Pedaggi del viaggio (€)', '1'],
+    ['margine', 'Ricarico desiderato (%)', '1'],
+    ['prezzo', 'Prezzo proposto al cliente (€)', '1']
+  ];
+  var NOTE_COSTI = {
+    altriKm: 'Gomme, manutenzione, ammortamento, assicurazione, AdBlue.',
+    pedaggi: 'Stima dal sito di Autostrade o dal Telepass.',
+    prezzo: 'Facoltativo, per vedere il margine.'
+  };
+
+  function euro(n) { return Number(n || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }); }
+  function durata(ore) {
+    var m = Math.round(ore * 60), h = Math.floor(m / 60);
+    return h ? h + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : (m % 60) + ' min';
+  }
+  function numero(v) { var x = Number(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : 0; }
+  function consumoTipico(m) {
+    if (m && m.consumo) return Number(m.consumo);
+    var L = m ? m.lunghezza : 1360;
+    return L <= 520 ? 11 : (L <= 950 ? 22 : 31);
+  }
+  function costiIniziali(salvati, m) {
+    var c = Object.assign({ gasolio: 1.65, costoOra: 22, velocita: 65, oreSoste: 2, trasferta: 50, altriKm: 0.18, margine: 15 }, salvati || {});
+    c.consumo = (m && m.consumo) ? Number(m.consumo) : (salvati && salvati.consumo) || consumoTipico(m);
+    c.pedaggi = 0;
+    c.prezzo = '';
+    return c;
+  }
+
+  // Calcolo dei costi: tutto qui, così è facile da controllare e modificare
+  function calcolaCosti(percorso, c) {
+    var km = percorso.km;
+    var kmVuoto = percorso.ritorno && percorso.tratte.length ? percorso.tratte[percorso.tratte.length - 1].km : 0;
+    var oreGuida = km / (numero(c.velocita) || 60);
+    var pause = Math.floor(oreGuida / 4.5) * 0.75;            // 45 minuti ogni 4 ore e mezza di guida
+    var giorni = Math.max(1, Math.ceil(oreGuida / 9));        // massimo 9 ore di guida al giorno
+    var notti = giorni - 1;
+    var oreLavoro = oreGuida + pause + numero(c.oreSoste);
+    var litri = km * numero(c.consumo) / 100;
+    var voci = {
+      carburante: litri * numero(c.gasolio),
+      autista: oreLavoro * numero(c.costoOra),
+      trasferte: notti * numero(c.trasferta),
+      altri: km * numero(c.altriKm),
+      pedaggi: numero(c.pedaggi)
+    };
+    var totale = voci.carburante + voci.autista + voci.trasferte + voci.altri + voci.pedaggi;
+    var prezzo = numero(c.prezzo);
+    return {
+      km: km, kmVuoto: kmVuoto, kmCarico: km - kmVuoto, oreGuida: oreGuida, pause: pause, giorni: giorni, notti: notti,
+      oreLavoro: oreLavoro, litri: litri, voci: voci, totale: totale,
+      costoKm: km ? totale / km : 0,
+      costoKmCarico: (km - kmVuoto) > 0 ? totale / (km - kmVuoto) : 0,
+      prezzoConsigliato: totale * (1 + numero(c.margine) / 100),
+      prezzo: prezzo, utile: prezzo ? prezzo - totale : null
+    };
+  }
+
+  function nuovoViaggio(mezzi) {
+    return {
+      mezzoId: mezzi[0] ? mezzi[0].id : null, mezzo: null,
+      tappe: [{ nome: '', lat: null, lon: null }, { nome: '', lat: null, lon: null }],
+      ritorno: false, costi: null, percorso: null
+    };
+  }
+
+  function vistaViaggi(idSalvato) {
+    var richieste = [caricaMezzi(), api('GET', '/api/impostazioni/costi'), api('GET', '/api/percorsi/stato'), api('GET', '/api/viaggi')];
+    if (idSalvato) richieste.push(api('GET', '/api/viaggi/' + idSalvato));
+    Promise.all(richieste).then(function (r) {
+      var mezzi = r[0], costiSalvati = r[1], servizio = r[2], salvati = r[3], aperto = r[4];
+      if (aperto) {
+        var d = aperto.dati;
+        stato.viaggio = { mezzoId: null, mezzo: d.mezzo || null, tappe: d.tappe, ritorno: !!d.ritorno, costi: d.costi, percorso: d.percorso, nome: aperto.nome };
+      }
+      if (!stato.viaggio) stato.viaggio = nuovoViaggio(mezzi);
+      var v = stato.viaggio;
+      function mezzoScelto() { return mezzi.filter(function (m) { return m.id === v.mezzoId; })[0] || null; }
+      if (!v.costi) v.costi = costiIniziali(costiSalvati, mezzoScelto());
+      var admin = stato.utente.ruolo === 'admin';
+
+      var main = guscio('viaggi',
+        '<div class="testata"><div><h1>' + (v.nome ? esc(v.nome) : 'Viaggi e costi') + '</h1>' +
+        '<p>Inserisci partenza e tappe: il programma calcola i km, quanto ti costa il viaggio e il prezzo al km per andare in pareggio.</p></div>' +
+        '<div class="riga-azioni"><button class="btn" id="nuovo-viaggio">Nuovo viaggio</button></div></div>' +
+        '<div class="viaggio-griglia">' +
+          '<div class="viaggio-lato">' +
+            '<section class="pannello"><h2>Percorso</h2>' +
+              '<label class="campo" style="margin-top:14px">Mezzo<select id="v-mezzo"><option value="">Nessun mezzo in particolare</option>' +
+                mezzi.map(function (m) { return '<option value="' + m.id + '"' + (m.id === v.mezzoId ? ' selected' : '') + '>' + esc(m.nome) + (m.targa ? ' (' + esc(m.targa) + ')' : '') + '</option>'; }).join('') +
+              '</select></label>' +
+              '<ol class="tappe" id="tappe"></ol>' +
+              '<div class="riga-azioni"><button class="btn btn-piccolo" id="agg-tappa">Aggiungi tappa</button></div>' +
+              '<label class="spunta" style="margin-top:14px"><input type="checkbox" id="v-ritorno"' + (v.ritorno ? ' checked' : '') + '> Rientro alla partenza (ritorno a vuoto)</label>' +
+              '<p class="nota" style="margin-top:10px">' + (servizio.autocompletamento ? 'Scrivi un indirizzo e scegli dall’elenco.' : 'Scrivi città o indirizzo e premi Invio per cercare.') + ' Puoi anche cliccare sulla mappa per aggiungere un punto.</p>' +
+              '<button class="btn btn-primario" id="calcola-percorso" style="margin-top:16px;width:100%;justify-content:center">Calcola percorso</button>' +
+              '<p class="errore" id="err-percorso"></p>' +
+            '</section>' +
+            '<section class="pannello"><h2>Costi</h2><div class="griglia-costi">' +
+              CAMPI_COSTI.map(function (c) {
+                return '<label class="campo">' + c[1] + '<input type="number" min="0" step="' + c[2] + '" data-costo="' + c[0] + '" value="' + esc(v.costi[c[0]]) + '">' +
+                  (NOTE_COSTI[c[0]] ? '<span class="nota-campo">' + NOTE_COSTI[c[0]] + '</span>' : '') + '</label>';
+              }).join('') +
+            '</div>' +
+            '<p class="nota" style="margin-top:12px">I valori iniziali sono solo esempi: inserisci i tuoi.</p>' +
+            (admin ? '<button class="btn btn-piccolo" id="salva-predefiniti" style="margin-top:12px">Usa questi valori come predefiniti</button>' : '') +
+            '</section>' +
+          '</div>' +
+          '<div class="viaggio-destra"><div class="mappa" id="mappa"></div><div id="esito"></div></div>' +
+        '</div>' +
+        '<section class="blocco" id="salvati" style="margin-top:34px"></section>');
+
+      // --- mappa ---
+      var livelloTappe = null, livelloLinea = null;
+      if (window.L) {
+        stato.mappa = L.map(main.querySelector('#mappa'), { zoomControl: true }).setView([42.6, 12.5], 6);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(stato.mappa);
+        livelloLinea = L.layerGroup().addTo(stato.mappa);
+        livelloTappe = L.layerGroup().addTo(stato.mappa);
+        stato.mappa.on('click', function (e) {
+          var t = { nome: 'Punto sulla mappa (' + e.latlng.lat.toFixed(4) + ', ' + e.latlng.lng.toFixed(4) + ')', lat: e.latlng.lat, lon: e.latlng.lng };
+          var libera = v.tappe.filter(function (x) { return x.lat == null && !x.nome; })[0];
+          if (libera) Object.assign(libera, t); else v.tappe.push(t);
+          percorsoCambiato();
+          disegnaTappe();
+        });
+      } else {
+        main.querySelector('#mappa').innerHTML = '<p class="nota" style="padding:20px">La mappa non è disponibile: controlla la connessione internet.</p>';
+      }
+
+      function aggiornaMappa(adatta) {
+        if (!stato.mappa) return;
+        livelloTappe.clearLayers(); livelloLinea.clearLayers();
+        var punti = [];
+        v.tappe.forEach(function (t, i) {
+          if (t.lat == null) return;
+          punti.push([t.lat, t.lon]);
+          L.marker([t.lat, t.lon], {
+            icon: L.divIcon({ className: 'pin-mappa', html: '<span>' + (i + 1) + '</span>', iconSize: [30, 30], iconAnchor: [15, 15] })
+          }).bindTooltip(esc(t.nome)).addTo(livelloTappe);
+        });
+        if (v.percorso && v.percorso.linea) {
+          L.polyline(v.percorso.linea, { color: '#f5b800', weight: 9, opacity: 0.9 }).addTo(livelloLinea);
+          L.polyline(v.percorso.linea, { color: '#1b1f24', weight: 4 }).addTo(livelloLinea);
+          if (adatta) stato.mappa.fitBounds(L.latLngBounds(v.percorso.linea), { padding: [30, 30] });
+        } else if (adatta && punti.length) {
+          if (punti.length === 1) stato.mappa.setView(punti[0], 10);
+          else stato.mappa.fitBounds(L.latLngBounds(punti), { padding: [40, 40] });
+        }
+      }
+
+      // --- tappe ---
+      var elTappe = main.querySelector('#tappe');
+      function etichetta(i) { return i === 0 ? 'Partenza' : (i === v.tappe.length - 1 ? 'Arrivo' : 'Tappa ' + i); }
+      function disegnaTappe() {
+        elTappe.innerHTML = v.tappe.map(function (t, i) {
+          return '<li class="tappa' + (t.lat != null ? ' confermata' : '') + '" data-i="' + i + '">' +
+            '<span class="tappa-num">' + (i + 1) + '</span>' +
+            '<div class="tappa-campo"><input type="text" data-cerca="' + i + '" value="' + esc(t.nome) + '" placeholder="' + etichetta(i) + ': città o indirizzo" aria-label="' + etichetta(i) + '" autocomplete="off">' +
+            '<ul class="suggerimenti" hidden></ul></div>' +
+            '<div class="tappa-azioni">' +
+              '<button class="btn-icona" data-su="' + i + '" title="Sposta su"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
+              '<button class="btn-icona" data-giu="' + i + '" title="Sposta giù"' + (i === v.tappe.length - 1 ? ' disabled' : '') + '>↓</button>' +
+              '<button class="btn-icona pericolo" data-togli="' + i + '" title="Togli"' + (v.tappe.length <= 2 ? ' disabled' : '') + '>×</button>' +
+            '</div></li>';
+        }).join('');
+        aggiornaMappa(true);
+      }
+      function percorsoCambiato() {
+        v.percorso = null;
+        mostraEsito();
+      }
+
+      var timerCerca = null;
+      function cerca(input) {
+        var i = Number(input.dataset.cerca), q = input.value.trim();
+        var lista = input.parentNode.querySelector('.suggerimenti');
+        if (q.length < 3) { lista.hidden = true; return; }
+        lista.hidden = false;
+        lista.innerHTML = '<li class="info">Cerco…</li>';
+        api('GET', '/api/percorsi/cerca?q=' + encodeURIComponent(q)).then(function (ris) {
+          if (input.value.trim() !== q) return;
+          if (!ris.length) { lista.innerHTML = '<li class="info">Nessun risultato. Prova ad aggiungere la provincia o il CAP.</li>'; return; }
+          lista.innerHTML = ris.map(function (x, k) { return '<li><button type="button" data-scegli="' + k + '">' + esc(x.nome) + '</button></li>'; }).join('');
+          lista.querySelectorAll('[data-scegli]').forEach(function (b) {
+            b.onmousedown = function (e) { e.preventDefault(); };
+            b.onclick = function () {
+              var x = ris[Number(b.dataset.scegli)];
+              v.tappe[i] = { nome: x.nome, lat: x.lat, lon: x.lon };
+              percorsoCambiato();
+              disegnaTappe();
+              var prossimo = elTappe.querySelector('[data-cerca="' + (i + 1) + '"]');
+              if (prossimo && !prossimo.value) prossimo.focus();
+            };
+          });
+        }).catch(function (err) { lista.innerHTML = '<li class="info">' + esc(err.message) + '</li>'; });
+      }
+      elTappe.addEventListener('input', function (e) {
+        var inp = e.target; if (!inp.dataset.cerca) return;
+        var t = v.tappe[Number(inp.dataset.cerca)];
+        t.nome = inp.value; t.lat = null; t.lon = null;
+        inp.closest('.tappa').classList.remove('confermata');
+        if (v.percorso) percorsoCambiato();
+        if (servizio.autocompletamento) { clearTimeout(timerCerca); timerCerca = setTimeout(function () { cerca(inp); }, 350); }
+      });
+      elTappe.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.dataset.cerca) { e.preventDefault(); cerca(e.target); }
+        if (e.key === 'Escape' && e.target.dataset.cerca) e.target.parentNode.querySelector('.suggerimenti').hidden = true;
+      });
+      elTappe.addEventListener('focusout', function (e) {
+        if (!e.target.dataset.cerca) return;
+        var lista = e.target.parentNode.querySelector('.suggerimenti');
+        setTimeout(function () { lista.hidden = true; }, 150);
+      });
+      elTappe.addEventListener('click', function (e) {
+        var b = e.target.closest('button'); if (!b) return;
+        var i;
+        if (b.dataset.su) { i = Number(b.dataset.su); v.tappe.splice(i - 1, 0, v.tappe.splice(i, 1)[0]); }
+        else if (b.dataset.giu) { i = Number(b.dataset.giu); v.tappe.splice(i + 1, 0, v.tappe.splice(i, 1)[0]); }
+        else if (b.dataset.togli) { v.tappe.splice(Number(b.dataset.togli), 1); }
+        else return;
+        percorsoCambiato();
+        disegnaTappe();
+      });
+      main.querySelector('#agg-tappa').onclick = function () {
+        v.tappe.push({ nome: '', lat: null, lon: null });
+        disegnaTappe();
+        elTappe.querySelector('[data-cerca="' + (v.tappe.length - 1) + '"]').focus();
+      };
+      main.querySelector('#v-ritorno').onchange = function () { v.ritorno = this.checked; percorsoCambiato(); };
+      main.querySelector('#v-mezzo').onchange = function () {
+        v.mezzoId = this.value ? Number(this.value) : null;
+        var m = mezzoScelto();
+        v.mezzo = null;
+        v.costi.consumo = consumoTipico(m);
+        main.querySelector('[data-costo="consumo"]').value = v.costi.consumo;
+        if (servizio.camion) percorsoCambiato(); else mostraEsito();
+      };
+      main.querySelector('#nuovo-viaggio').onclick = function () {
+        stato.viaggio = null;
+        if (location.hash === '#/viaggi') vistaViaggi(); else location.hash = '#/viaggi';
+      };
+
+      // --- costi ---
+      main.querySelectorAll('[data-costo]').forEach(function (inp) {
+        inp.oninput = function () { v.costi[inp.dataset.costo] = inp.value; mostraEsito(); };
+      });
+      var btnPred = main.querySelector('#salva-predefiniti');
+      if (btnPred) btnPred.onclick = function () {
+        api('PUT', '/api/impostazioni/costi', v.costi).then(function () { avvisa('Valori predefiniti salvati per tutta l’azienda'); })
+          .catch(function (err) { avvisa(err.message); });
+      };
+
+      // --- calcolo del percorso ---
+      main.querySelector('#calcola-percorso').onclick = function () {
+        var err = main.querySelector('#err-percorso');
+        err.textContent = '';
+        v.tappe = v.tappe.filter(function (t, i) { return t.lat != null || t.nome.trim() || i < 2; });
+        var manca = v.tappe.filter(function (t) { return t.lat == null; })[0];
+        if (manca) {
+          disegnaTappe();
+          err.textContent = manca.nome.trim()
+            ? 'Scegli "' + manca.nome.trim() + '" dall’elenco dei risultati (premi Invio per cercare).'
+            : 'Compila partenza e arrivo.';
+          return;
+        }
+        var punti = v.tappe.map(function (t) { return { lat: t.lat, lon: t.lon }; });
+        if (v.ritorno) punti.push(punti[0]);
+        var m = mezzoScelto();
+        var btn = this; btn.disabled = true; btn.textContent = 'Calcolo in corso…';
+        api('POST', '/api/percorsi/calcola', { punti: punti, mezzo: m ? { lunghezza: m.lunghezza, larghezza: m.larghezza, altezza: m.altezza } : null })
+          .then(function (p) {
+            p.ritorno = v.ritorno;
+            v.percorso = p;
+            if (m) v.mezzo = { nome: m.nome, targa: m.targa };
+            disegnaTappe();
+            mostraEsito();
+          })
+          .catch(function (e) { err.textContent = e.message; })
+          .then(function () { btn.disabled = false; btn.textContent = 'Calcola percorso'; });
+      };
+
+      // --- risultato ---
+      function mostraEsito() {
+        var box = main.querySelector('#esito');
+        if (!v.percorso) {
+          box.innerHTML = '<div class="esito-vuoto">Inserisci le tappe e premi <b>Calcola percorso</b>: qui vedrai km, tempi e costi.</div>';
+          aggiornaMappa(false);
+          return;
+        }
+        var c = calcolaCosti(v.percorso, v.costi), p = v.percorso;
+        var nomi = v.tappe.map(function (t) { return t.nome.split(',')[0]; });
+        if (p.ritorno) nomi.push(nomi[0]);
+        var margineHtml = '';
+        if (c.utile !== null) {
+          var pct = c.prezzo ? c.utile / c.prezzo * 100 : 0;
+          margineHtml = '<div class="avviso ' + (c.utile >= 0 ? 'verde' : '') + '">' +
+            (c.utile >= 0
+              ? 'Al prezzo di <b>' + euro(c.prezzo) + '</b> guadagni <b>' + euro(c.utile) + '</b> (' + num(pct, 1) + '% del prezzo).'
+              : 'Al prezzo di <b>' + euro(c.prezzo) + '</b> perdi <b>' + euro(-c.utile) + '</b>: il minimo per non rimetterci è ' + euro(c.totale) + '.') + '</div>';
+        }
+        var note = [];
+        if (c.giorni > 1) note.push('Il viaggio supera le 9 ore di guida al giorno: ho calcolato ' + c.giorni + ' giorni e ' + c.notti + (c.notti === 1 ? ' notte' : ' notti') + ' fuori.');
+        if (p.fonte === 'auto') note.push('Percorso calcolato con il profilo auto: non esclude le strade vietate ai camion. Con la chiave OpenRouteService il calcolo usa il profilo camion.');
+        note.push('Tempi di guida e pause sono stime: verifica sempre il rispetto del Regolamento CE 561/2006.');
+
+        box.innerHTML =
+          '<div class="cruscotto cruscotto-viaggio">' +
+            '<div><div class="valore">' + num(c.km, 0) + ' km</div><div class="desc">' + (c.kmVuoto ? 'di cui ' + num(c.kmVuoto, 0) + ' km a vuoto' : 'percorso totale') + '</div></div>' +
+            '<div><div class="valore">' + durata(c.oreGuida) + '</div><div class="desc">di guida stimata' + (c.giorni > 1 ? ', ' + c.giorni + ' giorni' : '') + '</div></div>' +
+            '<div><div class="valore">' + euro(c.totale) + '</div><div class="desc">costo del viaggio</div></div>' +
+            '<div class="evidenza"><div class="valore">' + euro(c.costoKm) + '</div><div class="desc">al km per andare in pareggio' + (c.kmVuoto ? '<br>' + euro(c.costoKmCarico) + ' sui soli km a carico' : '') + '</div></div>' +
+            '<div><div class="valore">' + euro(c.prezzoConsigliato) + '</div><div class="desc">prezzo consigliato (+' + num(numero(v.costi.margine), 0) + '%)</div></div>' +
+          '</div>' +
+          margineHtml +
+          '<div class="pannello tabella-scroll"><h3 style="margin-bottom:10px">Dettaglio dei costi</h3><table><tbody>' +
+            '<tr><td>Carburante</td><td class="nota">' + num(c.km, 0) + ' km × ' + num(numero(v.costi.consumo), 1) + ' l/100 km = ' + num(c.litri, 0) + ' litri × ' + euro(numero(v.costi.gasolio)) + '</td><td class="num">' + euro(c.voci.carburante) + '</td></tr>' +
+            '<tr><td>Autista</td><td class="nota">' + durata(c.oreLavoro) + ' di lavoro (guida ' + durata(c.oreGuida) + (c.pause ? ', pause ' + durata(c.pause) : '') + (numero(v.costi.oreSoste) ? ', carico e attese ' + durata(numero(v.costi.oreSoste)) : '') + ') × ' + euro(numero(v.costi.costoOra)) + '/ora</td><td class="num">' + euro(c.voci.autista) + '</td></tr>' +
+            (c.notti ? '<tr><td>Trasferte</td><td class="nota">' + c.notti + (c.notti === 1 ? ' notte' : ' notti') + ' × ' + euro(numero(v.costi.trasferta)) + '</td><td class="num">' + euro(c.voci.trasferte) + '</td></tr>' : '') +
+            '<tr><td>Altri costi del mezzo</td><td class="nota">' + num(c.km, 0) + ' km × ' + euro(numero(v.costi.altriKm)) + '/km</td><td class="num">' + euro(c.voci.altri) + '</td></tr>' +
+            '<tr><td>Pedaggi</td><td class="nota">valore inserito</td><td class="num">' + euro(c.voci.pedaggi) + '</td></tr>' +
+            '<tr class="totale"><td>Totale</td><td></td><td class="num">' + euro(c.totale) + '</td></tr>' +
+          '</tbody></table></div>' +
+          '<div class="pannello tabella-scroll"><h3 style="margin-bottom:10px">Tratte</h3><table><thead><tr><th>Da</th><th>A</th><th class="num">Km</th><th class="num">Tempo stimato</th></tr></thead><tbody>' +
+            p.tratte.map(function (t, i) {
+              return '<tr><td>' + esc(nomi[i] || '') + '</td><td>' + esc(nomi[i + 1] || '') + (p.ritorno && i === p.tratte.length - 1 ? ' <span class="etichetta">a vuoto</span>' : '') + '</td><td class="num">' + num(t.km, 0) + '</td><td class="num">' + durata(t.km / (numero(v.costi.velocita) || 60)) + '</td></tr>';
+            }).join('') +
+          '</tbody></table></div>' +
+          '<div class="note-viaggio">' + note.map(function (n) { return '<p class="nota">' + n + '</p>'; }).join('') + '</div>' +
+          '<div class="pannello salva-piano"><input type="text" id="nome-viaggio" placeholder="Nome del viaggio, es. Arezzo – Milano – Torino" value="' + esc(v.nome || '') + '">' +
+            '<button class="btn btn-scuro" id="salva-viaggio">Salva viaggio</button><span class="errore" id="err-salva"></span></div>';
+
+        box.querySelector('#salva-viaggio').onclick = function () {
+          var nome = box.querySelector('#nome-viaggio').value.trim();
+          var dati = {
+            mezzo: v.mezzo, tappe: v.tappe, ritorno: v.ritorno, costi: v.costi, percorso: v.percorso,
+            riepilogo: { km: c.km, totale: Math.round(c.totale * 100) / 100, costoKm: Math.round(c.costoKm * 1000) / 1000 }
+          };
+          api('POST', '/api/viaggi', { nome: nome, dati: dati }).then(function () {
+            avvisa('Viaggio salvato');
+            v.nome = nome;
+            caricaSalvati();
+          }).catch(function (e) { box.querySelector('#err-salva').textContent = e.message; });
+        };
+        aggiornaMappa(false);
+      }
+
+      // --- viaggi salvati ---
+      function disegnaSalvati(lista) {
+        var el = main.querySelector('#salvati');
+        if (!lista.length) { el.innerHTML = ''; return; }
+        el.innerHTML = '<h2 style="margin-bottom:12px">Viaggi salvati</h2><div class="pannello tabella-scroll"><table><thead><tr><th>Nome</th><th class="num">Km</th><th class="num">Costo</th><th class="num">Costo/km</th><th>Creato</th><th></th></tr></thead><tbody>' +
+          lista.map(function (x) {
+            var rp = x.riepilogo || {};
+            return '<tr><td><a href="#/viaggi/' + x.id + '"><b>' + esc(x.nome) + '</b></a></td><td class="num">' + num(rp.km || 0, 0) + '</td><td class="num">' + euro(rp.totale) + '</td><td class="num">' + euro(rp.costoKm) + '</td>' +
+              '<td>' + data(x.creato_il) + (x.autore ? '<div class="nota">' + esc(x.autore) + '</div>' : '') + '</td>' +
+              '<td class="num"><a class="btn-testo" href="#/viaggi/' + x.id + '">Apri</a><button class="btn-testo pericolo" data-elimina="' + x.id + '">Elimina</button></td></tr>';
+          }).join('') + '</tbody></table></div>';
+        el.querySelectorAll('[data-elimina]').forEach(function (b) {
+          b.onclick = function () {
+            if (!confirm('Eliminare questo viaggio salvato?')) return;
+            api('DELETE', '/api/viaggi/' + b.dataset.elimina).then(function () { avvisa('Viaggio eliminato'); caricaSalvati(); });
+          };
+        });
+      }
+      function caricaSalvati() { api('GET', '/api/viaggi').then(disegnaSalvati); }
+
+      disegnaTappe();
+      mostraEsito();
+      if (v.percorso) aggiornaMappa(true);
+      disegnaSalvati(salvati);
+      setTimeout(function () { if (stato.mappa) stato.mappa.invalidateSize(); }, 100);
+    }).catch(errorePagina);
+  }
+
   // ---------- Utenti (titolare) ----------
   function vistaUtenti() {
     api('GET', '/api/utenti').then(function (utenti) {
@@ -585,14 +984,18 @@
 
   // ---------- Aziende (super amministratore) ----------
   function vistaAziende() {
-    api('GET', '/api/aziende').then(function (aziende) {
+    api('GET', '/api/aziende').then(function (risp) {
+      var aziende = risp.aziende, funzioni = risp.funzioni;
       var attive = aziende.filter(function (a) { return a.attiva; }).length;
       var main = guscio('aziende',
         '<div class="testata"><div><h1>Aziende clienti</h1><p>' + aziende.length + ' aziende, di cui ' + attive + ' attive. Ogni azienda vede solo i propri mezzi, piani e utenti.</p></div></div>' +
-        (aziende.length ? '<div class="pannello tabella-scroll"><table><thead><tr><th>Azienda</th><th>Titolare</th><th class="num">Utenti</th><th class="num">Mezzi</th><th class="num">Piani</th><th>Dal</th><th>Stato</th><th></th></tr></thead><tbody>' +
+        (aziende.length ? '<div class="pannello tabella-scroll"><table><thead><tr><th>Azienda</th><th>Titolare</th><th class="num">Utenti</th><th class="num">Mezzi</th><th class="num">Piani</th><th>Funzioni attive</th><th>Dal</th><th>Stato</th><th></th></tr></thead><tbody>' +
           aziende.map(function (a) {
             return '<tr class="' + (a.attiva ? '' : 'spento') + '"><td><b>' + esc(a.nome) + '</b></td><td>' + esc(a.email_titolare || '') + '</td>' +
-              '<td class="num">' + a.utenti + '</td><td class="num">' + a.mezzi + '</td><td class="num">' + a.piani + '</td><td>' + data(a.creata_il) + '</td>' +
+              '<td class="num">' + a.utenti + '</td><td class="num">' + a.mezzi + '</td><td class="num">' + a.piani + '</td>' +
+              '<td class="funzioni-azienda">' + funzioni.map(function (f) {
+                return '<label class="spunta"><input type="checkbox" data-fz="' + a.id + '" data-id="' + f.id + '"' + (a.funzioni[f.id] ? ' checked' : '') + '> ' + esc(f.nome) + '</label>';
+              }).join('') + '</td><td>' + data(a.creata_il) + '</td>' +
               '<td><span class="etichetta ' + (a.attiva ? 'ok' : 'no') + '">' + (a.attiva ? 'Attiva' : 'Sospesa') + '</span></td>' +
               '<td class="num"><button class="btn-testo ' + (a.attiva ? 'pericolo' : '') + '" data-az="' + a.id + '" data-attiva="' + a.attiva + '">' + (a.attiva ? 'Sospendi' : 'Riattiva') + '</button></td></tr>';
           }).join('') + '</tbody></table></div>' : '') +
@@ -608,6 +1011,14 @@
         api('POST', '/api/aziende', valoriForm(this)).then(function () { avvisa('Azienda creata'); vistaAziende(); })
           .catch(function (err) { main.querySelector('#err').textContent = err.message; });
       };
+      main.querySelectorAll('[data-fz]').forEach(function (c) {
+        c.onchange = function () {
+          var f = {}; f[c.dataset.id] = c.checked;
+          api('PATCH', '/api/aziende/' + c.dataset.fz, { funzioni: f })
+            .then(function () { avvisa(c.checked ? 'Funzione attivata' : 'Funzione disattivata'); })
+            .catch(function (err) { avvisa(err.message); c.checked = !c.checked; });
+        };
+      });
       main.querySelectorAll('[data-az]').forEach(function (b) {
         b.onclick = function () {
           var attiva = b.dataset.attiva === 'true';
@@ -653,9 +1064,10 @@
       return vistaAziende();
     }
     switch (sez) {
-      case 'carico': return vistaCarico();
+      case 'carico': return haFunzione('carico') ? vistaCarico() : vistaHome();
+      case 'viaggi': return haFunzione('viaggi') ? vistaViaggi(parti[1] ? Number(parti[1]) : null) : vistaHome();
       case 'mezzi': return vistaMezzi();
-      case 'piani': return parti[1] ? vistaPiano(Number(parti[1])) : vistaPiani();
+      case 'piani': return !haFunzione('carico') ? vistaHome() : (parti[1] ? vistaPiano(Number(parti[1])) : vistaPiani());
       case 'utenti': return stato.utente.ruolo === 'admin' ? vistaUtenti() : vistaHome();
       case 'account': return vistaAccount();
       default: return vistaHome();

@@ -76,6 +76,26 @@ async function inizializza() {
     ALTER TABLE aziende ADD COLUMN IF NOT EXISTS impostazioni JSONB NOT NULL DEFAULT '{}';
     ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS consumo NUMERIC(5,1);
     CREATE INDEX IF NOT EXISTS idx_viaggi_azienda ON viaggi(azienda_id);
+    -- Flotta: tipo di mezzo, revisione, complessi veicolari
+    ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS categoria TEXT;
+    ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS ultima_revisione DATE;
+    ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS scadenza_revisione DATE;
+    ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS officina_revisione TEXT;
+    ALTER TABLE mezzi ALTER COLUMN lunghezza DROP NOT NULL;
+    ALTER TABLE mezzi ALTER COLUMN larghezza DROP NOT NULL;
+    ALTER TABLE mezzi ALTER COLUMN altezza DROP NOT NULL;
+    ALTER TABLE mezzi ALTER COLUMN portata DROP NOT NULL;
+    UPDATE mezzi SET categoria = CASE WHEN lunghezza <= 520 THEN 'furgone' WHEN lunghezza <= 950 THEN 'motrice' ELSE 'semirimorchio' END
+      WHERE categoria IS NULL;
+    CREATE TABLE IF NOT EXISTS complessi (
+      id SERIAL PRIMARY KEY,
+      azienda_id INT NOT NULL REFERENCES aziende(id) ON DELETE CASCADE,
+      nome TEXT,
+      trainante_id INT NOT NULL REFERENCES mezzi(id) ON DELETE CASCADE,
+      rimorchio_id INT NOT NULL REFERENCES mezzi(id) ON DELETE CASCADE,
+      creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_complessi_azienda ON complessi(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_utenti_azienda ON utenti(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_mezzi_azienda ON mezzi(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_colli_azienda ON colli_salvati(azienda_id);

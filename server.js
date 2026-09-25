@@ -24,6 +24,7 @@ app.use('/api', require('./routes/accesso'));
 app.use('/api/aziende', require('./routes/aziende'));
 app.use('/api/utenti', require('./routes/utenti'));
 app.use('/api/mezzi', require('./routes/mezzi'));
+app.use('/api/complessi', require('./routes/complessi'));
 app.use('/api/colli', require('./routes/colli'));
 app.use('/api/piani', require('./routes/piani'));
 app.use('/api/percorsi', require('./routes/percorsi'));

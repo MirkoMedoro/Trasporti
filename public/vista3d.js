@@ -65,7 +65,13 @@
     motrice: { file: '/modelli/iveco_eurocargo.glb', crediti: '“1991 Iveco Euro Cargo” di zairiq', link: 'https://sketchfab.com/3d-models/1991-iveco-euro-cargo-e4ba5a534c024ed8904f0ec0218a3b8c' }
   };
   var inCaricamento = {};
-  function tipoMezzo(lunghezza) { return lunghezza <= 520 ? 'furgone' : (lunghezza <= 950 ? 'motrice' : 'bilico'); }
+  // Tipo di disegno: dal tipo di mezzo se c'è, altrimenti dalla lunghezza del vano
+  function tipoMezzo(mezzo) {
+    var c = { furgone: 'furgone', motrice: 'motrice', semirimorchio: 'bilico', rimorchio: 'rimorchio' }[mezzo.categoria];
+    if (c) return c;
+    var l = mezzo.lunghezza;
+    return l <= 520 ? 'furgone' : (l <= 950 ? 'motrice' : 'bilico');
+  }
   function caricaModello(tipo) {
     var m = MODELLI[tipo];
     if (!m || !window.THREE || !window.THREE.GLTFLoader) return Promise.resolve(null);
@@ -79,7 +85,7 @@
   }
   // Testo dei crediti richiesto dalla licenza CC BY 4.0
   window.creditiModello3D = function (mezzo) {
-    var m = MODELLI[tipoMezzo(mezzo.lunghezza)];
+    var m = MODELLI[tipoMezzo(mezzo)];
     return m ? 'Modello 3D ' + m.crediti + ', <a href="' + m.link + '" target="_blank" rel="noopener">Sketchfab</a>, licenza <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, adattato.' : '';
   };
 
@@ -90,8 +96,8 @@
     }
     var T = window.THREE;
     var L = mezzo.lunghezza, W = mezzo.larghezza, H = mezzo.altezza;
-    var tipo = tipoMezzo(L);
-    var pianale = tipo === 'furgone' ? 62 : (tipo === 'motrice' ? 112 : 125);
+    var tipo = tipoMezzo(mezzo);
+    var pianale = tipo === 'furgone' ? 62 : (tipo === 'bilico' ? 125 : 112);
     var pronto = false, distrutto = false, raggioBase = 1000, lungTot = 1000, altTot = 400, pianoTaglio = null;
     var ZC = W / 2;
 
@@ -528,6 +534,26 @@
         pezzo(rbox(rm * 3, 5, 76, 2), M.plastica, xr, 2 * rm + 14, s < 0 ? 36 : W - 36);
         pezzo(box(4, rm + 4, 64), M.plastica, xr + rm + 16, rm - 4 + (rm + 4) / 2 - rm / 2 + 6, s < 0 ? 36 : W - 36);
       });
+    } else if (tipo === 'rimorchio') {
+      // Rimorchio con timone: due assi, nessuna cabina
+      var rr = 46;
+      [ZC - 42, ZC + 42].forEach(function (z) { pezzo(box(L - 40, 18, 11), M.telaio, L / 2, pianale - 31, z); });
+      var t1 = Math.min(150, L * 0.22), t2 = Math.max(L - 150, L * 0.78);
+      cassone({ protezioni: [t1 + rr + 25, t2 - rr - 25] });
+      [t1, t2].forEach(function (x) {
+        asse(x, rr, true, 28);
+        [-1, 1].forEach(function (s) { pezzo(rbox(rr * 3, 5, 66, 2), M.plastica, x, 2 * rr + 14, s < 0 ? 34 : W - 34); });
+      });
+      // ralla girevole anteriore e timone
+      pezzo(geoCil(W * 0.3, W * 0.3, 8, 32), M.telaio, t1, pianale - 20, ZC);
+      var lt = 170;
+      [-1, 1].forEach(function (s) {
+        var braccio = pezzo(box(lt, 9, 9), M.telaio, t1 - lt / 2, 58, ZC + s * 22);
+        braccio.rotation.y = s * 0.12;
+      });
+      pezzo(rbox(22, 16, 24, 3), M.telaio, t1 - lt - 4, 58, ZC);
+      pezzo(tieni(new T.TorusGeometry(9, 2.4, 10, 24)), M.cromo, t1 - lt - 18, 58, ZC).rotation.x = Math.PI / 2;
+      xMin = t1 - lt - 40;
     } else {
       xMin = furgone() - 20;
     }
@@ -626,7 +652,7 @@
     sole.shadow.bias = -0.0005; sole.shadow.normalBias = 1.2; sole.shadow.radius = 3;
     scena.add(sole);
 
-    raggioBase = Math.sqrt(lungTot * lungTot + W * W + altTot * altTot) * (tipo === 'furgone' ? 1.55 : 1.3);
+    raggioBase = Math.sqrt(lungTot * lungTot + W * W + altTot * altTot) * (tipo === 'furgone' ? 1.55 : (tipo === 'rimorchio' ? 1.45 : 1.3));
     if (pianoTaglio) pianoTaglio.constant = pianoTaglio.userData.x + gruppo.position.x;
     pronto = true;
     var attesa = contenitore.querySelector('.attesa3d');

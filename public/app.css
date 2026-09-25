@@ -226,3 +226,36 @@ tr.totale td { font-weight: 600; border-top: 2px solid var(--inchiostro); border
 .cruscotto-viaggio .valore { font-size: 25px; white-space: nowrap; }
 @media (max-width: 1350px) { .cruscotto-viaggio { grid-template-columns: repeat(3, 1fr); } .cruscotto-viaggio > div { border-bottom: 1px solid var(--linea); } }
 @media (max-width: 640px) { .cruscotto-viaggio { grid-template-columns: repeat(2, 1fr); } }
+
+/* Flotta, complessi, scadenze */
+.tipo-mezzo { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--grigio); font-weight: 600; }
+.gruppo-campi { border: 0; border-top: 1px solid var(--linea); margin: 20px 0 0; padding: 16px 0 0; }
+.gruppo-campi legend { font-family: var(--titoli); font-weight: 600; font-size: 17px; padding: 0 8px 0 0; }
+.gruppo-campi[hidden] { display: none; }
+.etichetta.rev-scaduta { color: #fff; background: var(--rosso); border-color: var(--rosso); }
+.etichetta.rev-vicina { color: #6b4e00; background: #fff4cc; border-color: #f0d680; }
+.etichetta.rev-ok { color: var(--verde); border-color: #bfe0cf; background: #eef8f3; }
+.etichetta.rev-nd { color: var(--grigio); }
+.filtri-scadenze { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.filtro { border: 1px solid var(--linea); background: var(--bianco); padding: 10px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; color: var(--grigio); }
+.filtro b { font-family: var(--titoli); font-size: 22px; color: var(--inchiostro); margin-right: 4px; vertical-align: -2px; }
+.filtro.attivo { border-color: var(--inchiostro); box-shadow: inset 0 -3px 0 var(--giallo); color: var(--inchiostro); }
+.filtro-scaduta b { color: var(--rosso); }
+.filtro-vicina b { color: #b88600; }
+tr.riga-scaduta td { background: #fdf3f1; }
+tr.riga-registra td { background: #fffbea; }
+.form-registra { padding: 6px 0; }
+.avviso-home { display: flex; align-items: center; gap: 14px; padding: 14px 18px; margin-bottom: 22px; max-width: 920px; border: 1px solid #f0d680; border-left: 4px solid var(--giallo); background: #fffbea; text-decoration: none; border-radius: 3px; }
+.avviso-home.rosso { border-color: #efc6be; border-left-color: var(--rosso); background: #fcf1ef; }
+.avviso-home svg { width: 24px; height: 24px; flex: none; }
+.avviso-home .vai { margin-left: auto; font-weight: 600; white-space: nowrap; }
+.consiglio { margin-top: 22px; border-color: var(--inchiostro); }
+.consiglio-testa { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
+.consiglio-testa h2 { font-size: 28px; margin: 4px 0 6px; }
+.consiglio-testa p { color: var(--grigio); max-width: 70ch; }
+.etichetta-consiglio { display: inline-block; background: var(--giallo); color: var(--nero); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; padding: 3px 8px; border-radius: 2px; }
+tr.riga-scelta td { background: #fff8e0; }
+.sezione-vano + .sezione-vano { margin-top: 34px; padding-top: 26px; border-top: 2px solid var(--inchiostro); }
+.testa-vano { margin-bottom: 14px; }
+.testa-vano h2 { margin-bottom: 4px; }
+.misure-mezzo { line-height: 1.5; }

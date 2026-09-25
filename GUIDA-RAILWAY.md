@@ -105,5 +105,5 @@ OpenStreetMap sono pensate per un uso leggero).
 ## Funzioni per azienda
 
 Nel pannello **Aziende clienti** ogni azienda ha le spunte delle funzioni
-("Piano di carico", "Viaggi e costi"). Togliendo la spunta, la funzione
+("Piano di carico", "Viaggi e costi", "Scadenze"). Togliendo la spunta, la funzione
 sparisce dal menu di quell'azienda e viene bloccata anche sul server.

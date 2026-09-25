@@ -96,10 +96,11 @@ function sfoltisci(coord, max) {
 function ingombro(m) {
   if (!m) return null;
   const L = Number(m.lunghezza) || 0;
-  const tipo = L <= 520 ? 'furgone' : (L <= 950 ? 'motrice' : 'bilico');
+  const cat = { furgone: 'furgone', motrice: 'motrice', trattore: 'bilico', semirimorchio: 'bilico' }[m.categoria];
+  const tipo = cat || (L <= 520 ? 'furgone' : (L <= 950 ? 'motrice' : 'bilico'));
   const pianale = tipo === 'furgone' ? 0.65 : (tipo === 'motrice' ? 1.1 : 1.3);
   return {
-    height: Math.min(4.5, Math.round(((Number(m.altezza) || 250) / 100 + pianale + 0.1) * 100) / 100),
+    height: Math.min(4.5, Math.round(((Number(m.altezza) || (tipo === 'bilico' ? 270 : 250)) / 100 + pianale + 0.1) * 100) / 100),
     width: 2.55,
     length: tipo === 'bilico' ? 16.5 : Math.round((L / 100 + (tipo === 'motrice' ? 2.5 : 1.8)) * 10) / 10,
     weight: tipo === 'bilico' ? 40 : (tipo === 'motrice' ? 18 : 3.5),

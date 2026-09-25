@@ -4,13 +4,6 @@
 
   var COLORI = ['#f5b800', '#2f6fdf', '#1f9d6b', '#d9542b', '#8a5cd6', '#0fa3b1', '#b5832a', '#e0588f', '#5a7d2a', '#6b7a8f'];
 
-  var MODELLI_MEZZO = [
-    { nome: 'Furgone 3,5 t', lunghezza: 420, larghezza: 200, altezza: 210, portata: 1200 },
-    { nome: 'Motrice 7,50 m', lunghezza: 750, larghezza: 245, altezza: 260, portata: 9500 },
-    { nome: 'Semirimorchio 13,60 m', lunghezza: 1360, larghezza: 248, altezza: 270, portata: 24000 },
-    { nome: 'Mega trailer 13,60 m', lunghezza: 1360, larghezza: 248, altezza: 300, portata: 24000 }
-  ];
-
   var MODELLI_COLLO = {
     eur: { nome: 'Bancale EUR', lunghezza: 120, larghezza: 80, altezza: 120, peso: 300, quantita: 1, impilabile: true, ruotabile: true },
     ind: { nome: 'Bancale industriale', lunghezza: 120, larghezza: 100, altezza: 120, peso: 400, quantita: 1, impilabile: true, ruotabile: true },
@@ -25,6 +18,7 @@
     utenti: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.3-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.7 3 2.5 3.5 5.2"/></svg>',
     aziende: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21V8l6-4v17M9 21V10l12 3v8M3 21h18M13 16h4"/></svg>',
     viaggi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 18h7a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7"/></svg>',
+    scadenze: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/></svg>',
     account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.2-7 8-7s7 2.5 8 7"/></svg>'
   };
 
@@ -32,8 +26,8 @@
     utente: null,
     mezzi: [],
     colliSalvati: [],
-    piano: { mezzoId: null, righe: [], risultato: null, mezzo: null },
-    vista3d: null,
+    piano: { unita: null, righe: [], risultato: null },
+    viste3d: [],
     viaggio: null,
     mappa: null
   };
@@ -77,7 +71,8 @@
     return o;
   }
   function chiudi3D() {
-    if (stato.vista3d) { stato.vista3d.distruggi(); stato.vista3d = null; }
+    stato.viste3d.forEach(function (v) { v.distruggi(); });
+    stato.viste3d = [];
     if (stato.mappa) { stato.mappa.remove(); stato.mappa = null; }
   }
   function haFunzione(id) { return !stato.utente || !stato.utente.funzioni || stato.utente.funzioni[id] !== false; }
@@ -142,6 +137,7 @@
     if (haFunzione('carico')) v.push(['carico', 'Piano di carico']);
     if (haFunzione('viaggi')) v.push(['viaggi', 'Viaggi e costi']);
     v.push(['mezzi', 'Mezzi']);
+    if (haFunzione('scadenze')) v.push(['scadenze', 'Scadenze']);
     if (haFunzione('carico')) v.push(['piani', 'Piani salvati']);
     if (r === 'admin') v.push(['utenti', 'Utenti']);
     v.push(['account', 'Il mio account']);
@@ -176,64 +172,222 @@
     var tessere = [];
     if (haFunzione('carico')) tessere.push(['carico', 'Piano di carico', 'Inserisci i colli e ottieni la disposizione migliore.']);
     if (haFunzione('viaggi')) tessere.push(['viaggi', 'Viaggi e costi', 'Km del percorso, costo del viaggio e prezzo di pareggio.']);
-    tessere.push(['mezzi', 'Mezzi', 'Misure, portata e consumo di ogni tuo mezzo.']);
+    tessere.push(['mezzi', 'Mezzi', 'La flotta con misure, portata, revisione e complessi veicolari.']);
+    if (haFunzione('scadenze')) tessere.push(['scadenze', 'Scadenze', 'Le revisioni in arrivo di tutti i mezzi.']);
     if (haFunzione('carico')) tessere.push(['piani', 'Piani salvati', 'Riapri, stampa o elimina i carichi già calcolati.']);
     if (stato.utente.ruolo === 'admin') tessere.push(['utenti', 'Utenti', 'Chi del tuo personale può accedere.']);
-    guscio('home',
+    var main = guscio('home',
       '<div class="testata"><div><h1>Buongiorno, ' + esc(stato.utente.nome.split(' ')[0]) + '</h1>' +
       '<p>' + esc(stato.utente.azienda) + '</p></div></div>' +
+      '<div id="avvisi-home"></div>' +
       '<div class="scorciatoie">' + tessere.map(function (t) {
         return '<a class="scorciatoia" href="#/' + t[0] + '">' + ICONE[t[0]] + '<strong>' + t[1] + '</strong><span>' + t[2] + '</span></a>';
       }).join('') + '</div>');
+    // Avviso delle revisioni scadute o in scadenza
+    if (haFunzione('scadenze')) caricaMezzi().then(function (mezzi) {
+      var scadute = 0, vicine = 0;
+      mezzi.forEach(function (m) { var c = statoRevisione(m).cls; if (c === 'scaduta') scadute++; if (c === 'vicina') vicine++; });
+      if (!scadute && !vicine) return;
+      var box = main.querySelector('#avvisi-home');
+      if (!box) return;
+      box.innerHTML = '<a class="avviso-home ' + (scadute ? 'rosso' : '') + '" href="#/scadenze">' + ICONE.scadenze +
+        '<span>' + (scadute ? '<b>' + scadute + (scadute === 1 ? ' revisione scaduta' : ' revisioni scadute') + '</b>' : '') +
+        (scadute && vicine ? ' e ' : '') + (vicine ? '<b>' + vicine + '</b> in scadenza entro 30 giorni' : '') + '</span><span class="vai">Vai alle scadenze →</span></a>';
+    }).catch(function () {});
   }
 
-  // ---------- Mezzi ----------
+  // ---------- Mezzi (flotta) ----------
+  var CATEGORIE = {
+    furgone: { nome: 'Furgone', vano: true, motore: true, anni: 2 },
+    motrice: { nome: 'Motrice', vano: true, motore: true, anni: 1 },
+    trattore: { nome: 'Trattore stradale', vano: false, motore: true, anni: 1 },
+    semirimorchio: { nome: 'Semirimorchio', vano: true, motore: false, anni: 1 },
+    rimorchio: { nome: 'Rimorchio', vano: true, motore: false, anni: 1 }
+  };
+  function due(n) { return (n < 10 ? '0' : '') + n; }
+  function isoData(d) { return d.getFullYear() + '-' + due(d.getMonth() + 1) + '-' + due(d.getDate()); }
+  function oggiIso() { return isoData(new Date()); }
+  function dataIt(iso) { return iso ? new Date(iso + 'T00:00:00').toLocaleDateString('it-IT') : '–'; }
+  function aggiungiAnni(iso, anni) { var d = new Date(iso + 'T00:00:00'); d.setFullYear(d.getFullYear() + anni); return isoData(d); }
+  function giorniA(iso) {
+    if (!iso) return null;
+    var oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+    return Math.round((new Date(iso + 'T00:00:00') - oggi) / 86400000);
+  }
+  function statoRevisione(m) {
+    var g = giorniA(m.scadenza_revisione);
+    if (g === null) return { cls: 'nd', testo: 'Da inserire', g: null };
+    if (g < 0) return { cls: 'scaduta', testo: 'Scaduta da ' + (-g) + (g === -1 ? ' giorno' : ' giorni'), g: g };
+    if (g === 0) return { cls: 'vicina', testo: 'Scade oggi', g: g };
+    if (g <= 30) return { cls: 'vicina', testo: 'Tra ' + g + (g === 1 ? ' giorno' : ' giorni'), g: g };
+    return { cls: 'ok', testo: 'In regola', g: g };
+  }
+  function nomeMezzo(m) { return m.nome + (m.targa && m.targa !== m.nome ? ' (' + m.targa + ')' : ''); }
+  function perVano(m) {
+    return { nome: m.nome, targa: m.targa, categoria: m.categoria, lunghezza: m.lunghezza, larghezza: m.larghezza, altezza: m.altezza, portata: m.portata };
+  }
+
   function caricaMezzi() { return api('GET', '/api/mezzi').then(function (m) { stato.mezzi = m; return m; }); }
+  function caricaFlotta() {
+    return Promise.all([caricaMezzi(), api('GET', '/api/complessi')]).then(function (r) { return { mezzi: r[0], complessi: r[1] }; });
+  }
+
+  // Unità che si possono caricare: furgoni, motrici, semirimorchi e complessi veicolari
+  function unitaDiCarico(flotta) {
+    var perId = {};
+    flotta.mezzi.forEach(function (m) { perId[m.id] = m; });
+    var trainati = {}, complessi = [], singoli = [];
+    flotta.complessi.forEach(function (c) {
+      var t = perId[c.trainante_id], r = perId[c.rimorchio_id];
+      if (!t || !r) return;
+      if (t.categoria === 'trattore') trainati[r.id] = true;
+      complessi.push({
+        chiave: 'c' + c.id, complesso: true,
+        nome: c.nome || (nomeMezzo(t) + ' + ' + nomeMezzo(r)),
+        mezzi: [t, r], scomparti: t.categoria === 'motrice' ? [t, r] : [r]
+      });
+    });
+    flotta.mezzi.forEach(function (m) {
+      if (['furgone', 'motrice', 'semirimorchio'].indexOf(m.categoria) < 0 || !m.lunghezza) return;
+      if (m.categoria === 'semirimorchio' && trainati[m.id]) return;
+      singoli.push({ chiave: 'm' + m.id, complesso: false, nome: nomeMezzo(m), mezzi: [m], scomparti: [m] });
+    });
+    var tutte = singoli.concat(complessi);
+    tutte.forEach(function (u) {
+      u.volume = 0; u.portata = 0;
+      u.scomparti.forEach(function (s) { u.volume += s.lunghezza * s.larghezza * s.altezza; u.portata += s.portata; });
+      u.scadute = u.mezzi.filter(function (m) { var g = giorniA(m.scadenza_revisione); return g !== null && g < 0; });
+    });
+    return tutte;
+  }
+
+  var MODELLI_MEZZO = [
+    { categoria: 'furgone', nome: 'Furgone 3,5 t', lunghezza: 420, larghezza: 200, altezza: 210, portata: 1200, consumo: 11 },
+    { categoria: 'motrice', nome: 'Motrice 7,50 m', lunghezza: 750, larghezza: 245, altezza: 260, portata: 9500, consumo: 22 },
+    { categoria: 'motrice', nome: 'Motrice per autotreno 7,70 m', lunghezza: 770, larghezza: 248, altezza: 270, portata: 12000, consumo: 30 },
+    { categoria: 'trattore', nome: 'Trattore stradale', consumo: 31 },
+    { categoria: 'semirimorchio', nome: 'Semirimorchio 13,60 m', lunghezza: 1360, larghezza: 248, altezza: 270, portata: 24000 },
+    { categoria: 'semirimorchio', nome: 'Mega trailer 13,60 m', lunghezza: 1360, larghezza: 248, altezza: 300, portata: 24000 },
+    { categoria: 'rimorchio', nome: 'Rimorchio 7,70 m', lunghezza: 770, larghezza: 248, altezza: 270, portata: 13000 }
+  ];
+
+  function badgeRevisione(m) {
+    var s = statoRevisione(m);
+    return '<span class="etichetta rev-' + s.cls + '">' + s.testo + '</span>' + (m.scadenza_revisione ? '<div class="nota">' + dataIt(m.scadenza_revisione) + '</div>' : '');
+  }
 
   function vistaMezzi(inModifica) {
-    caricaMezzi().then(function (mezzi) {
+    caricaFlotta().then(function (flotta) {
+      var mezzi = flotta.mezzi;
       var m = inModifica ? mezzi.filter(function (x) { return x.id === inModifica; })[0] : null;
-      var righe = mezzi.map(function (x) {
-        return '<tr><td><b>' + esc(x.nome) + '</b></td><td>' + esc(x.targa || '') + '</td>' +
-          '<td class="num">' + x.lunghezza + ' × ' + x.larghezza + ' × ' + x.altezza + '</td>' +
-          '<td class="num">' + num(x.portata) + '</td>' +
+      var ordine = ['furgone', 'motrice', 'trattore', 'semirimorchio', 'rimorchio'];
+      var ordinati = mezzi.slice().sort(function (a, b) { return (ordine.indexOf(a.categoria) - ordine.indexOf(b.categoria)) || a.nome.localeCompare(b.nome); });
+      var perId = {}; mezzi.forEach(function (x) { perId[x.id] = x; });
+
+      var righe = ordinati.map(function (x) {
+        var c = CATEGORIE[x.categoria] || { nome: '–' };
+        return '<tr><td><span class="tipo-mezzo">' + c.nome + '</span></td><td><b>' + esc(x.nome) + '</b></td><td>' + esc(x.targa || '') + '</td>' +
+          '<td class="num">' + (x.lunghezza ? x.lunghezza + ' × ' + x.larghezza + ' × ' + x.altezza : '–') + '</td>' +
+          '<td class="num">' + (x.portata ? num(x.portata) : '–') + '</td>' +
           '<td class="num">' + (x.consumo ? num(x.consumo, 1) : '–') + '</td>' +
-          '<td class="num"><button class="btn-testo" data-mod="' + x.id + '">Modifica</button>' +
+          '<td>' + badgeRevisione(x) + '</td>' +
+          '<td class="num" style="white-space:nowrap"><button class="btn-testo" data-mod="' + x.id + '">Modifica</button>' +
           '<button class="btn-testo pericolo" data-del="' + x.id + '">Elimina</button></td></tr>';
       }).join('');
+
+      var trainanti = mezzi.filter(function (x) { return x.categoria === 'motrice' || x.categoria === 'trattore'; });
+      var rimorchiati = mezzi.filter(function (x) { return x.categoria === 'rimorchio' || x.categoria === 'semirimorchio'; });
+      var elencoComplessi = flotta.complessi.map(function (c) {
+        var t = perId[c.trainante_id], r = perId[c.rimorchio_id];
+        if (!t || !r) return '';
+        var tipo = t.categoria === 'motrice' ? 'Autotreno' : 'Autoarticolato';
+        return '<tr><td><span class="tipo-mezzo">' + tipo + '</span></td><td><b>' + esc(c.nome || '') + '</b></td>' +
+          '<td>' + esc(nomeMezzo(t)) + '</td><td>' + esc(nomeMezzo(r)) + '</td>' +
+          '<td class="num"><button class="btn-testo pericolo" data-delc="' + c.id + '">Elimina</button></td></tr>';
+      }).join('');
+
+      var cat = m ? m.categoria : 'motrice';
       var main = guscio('mezzi',
-        '<div class="testata"><div><h1>Mezzi</h1><p>Salva le misure interne del vano di carico. Le troverai pronte quando calcoli un piano.</p></div></div>' +
+        '<div class="testata"><div><h1>Mezzi</h1><p>Tutta la flotta: furgoni, motrici, trattori, semirimorchi e rimorchi, con misure, portata e revisione.</p></div></div>' +
         (mezzi.length ?
-          '<div class="pannello tabella-scroll"><table><thead><tr><th>Nome</th><th>Targa</th><th class="num">Vano L × P × H (cm)</th><th class="num">Portata (kg)</th><th class="num">Consumo (l/100 km)</th><th></th></tr></thead><tbody>' + righe + '</tbody></table></div>'
+          '<div class="pannello tabella-scroll"><table><thead><tr><th>Tipo</th><th>Nome</th><th>Targa</th><th class="num">Vano L × P × H (cm)</th><th class="num">Peso max (kg)</th><th class="num">Consumo (l/100 km)</th><th>Revisione</th><th></th></tr></thead><tbody>' + righe + '</tbody></table></div>'
           : '') +
         '<form class="pannello" id="form-mezzo" novalidate>' +
           '<div class="testata" style="margin-bottom:16px"><h2>' + (m ? 'Modifica ' + esc(m.nome) : 'Nuovo mezzo') + '</h2>' +
-          (m ? '' : '<label class="campo" style="min-width:240px">Parti da un modello<select id="modello"><option value="">Scegli…</option>' +
-            MODELLI_MEZZO.map(function (x, i) { return '<option value="' + i + '">' + x.nome + '</option>'; }).join('') + '</select></label>') +
-          '</div>' +
+          '<label class="campo" style="min-width:240px">Parti da un modello<select id="modello"><option value="">Scegli…</option></select></label></div>' +
           '<div class="griglia-form">' +
-            '<label class="campo" style="grid-column:span 2">Nome<input type="text" name="nome" placeholder="Es. Bilico Mario" value="' + esc(m ? m.nome : '') + '"></label>' +
+            '<label class="campo">Tipo di mezzo<select name="categoria" id="categoria">' +
+              Object.keys(CATEGORIE).map(function (k) { return '<option value="' + k + '"' + (k === cat ? ' selected' : '') + '>' + CATEGORIE[k].nome + '</option>'; }).join('') +
+            '</select></label>' +
+            '<label class="campo">Nome<input type="text" name="nome" placeholder="Es. Iveco di Mario" value="' + esc(m ? m.nome : '') + '"></label>' +
             '<label class="campo">Targa<input type="text" name="targa" value="' + esc(m ? m.targa : '') + '"></label>' +
-            '<label class="campo">Lunghezza vano (cm)<input type="number" name="lunghezza" min="50" value="' + (m ? m.lunghezza : '') + '"></label>' +
-            '<label class="campo">Larghezza vano (cm)<input type="number" name="larghezza" min="50" value="' + (m ? m.larghezza : '') + '"></label>' +
-            '<label class="campo">Altezza vano (cm)<input type="number" name="altezza" min="50" value="' + (m ? m.altezza : '') + '"></label>' +
-            '<label class="campo">Portata utile (kg)<input type="number" name="portata" min="1" value="' + (m ? m.portata : '') + '"></label>' +
-            '<label class="campo">Consumo medio (l/100 km)<input type="number" name="consumo" min="1" step="0.1" placeholder="facoltativo" value="' + (m && m.consumo ? m.consumo : '') + '"></label>' +
           '</div>' +
-          '<p class="nota" style="margin-top:12px">I modelli hanno misure indicative: controlla sempre quelle reali del tuo mezzo.</p>' +
+          '<fieldset class="gruppo-campi" id="campi-vano"><legend>Vano di carico</legend><div class="griglia-form">' +
+            '<label class="campo">Lunghezza (cm)<input type="number" name="lunghezza" min="50" value="' + (m && m.lunghezza ? m.lunghezza : '') + '"></label>' +
+            '<label class="campo">Larghezza (cm)<input type="number" name="larghezza" min="50" value="' + (m && m.larghezza ? m.larghezza : '') + '"></label>' +
+            '<label class="campo">Altezza (cm)<input type="number" name="altezza" min="50" value="' + (m && m.altezza ? m.altezza : '') + '"></label>' +
+            '<label class="campo">Peso massimo caricabile (kg)<input type="number" name="portata" min="1" value="' + (m && m.portata ? m.portata : '') + '"></label>' +
+          '</div></fieldset>' +
+          '<fieldset class="gruppo-campi" id="campi-motore"><legend>Consumi</legend><div class="griglia-form">' +
+            '<label class="campo">Consumo medio (l/100 km)<input type="number" name="consumo" min="1" step="0.1" placeholder="facoltativo" value="' + (m && m.consumo ? m.consumo : '') + '"></label>' +
+          '</div></fieldset>' +
+          '<fieldset class="gruppo-campi"><legend>Revisione</legend><div class="griglia-form">' +
+            '<label class="campo">Data ultima revisione<input type="date" name="ultima_revisione" value="' + (m && m.ultima_revisione ? m.ultima_revisione : '') + '"></label>' +
+            '<label class="campo" style="grid-column:span 2">Officina o centro dell’ultima revisione<input type="text" name="officina_revisione" value="' + esc(m && m.officina_revisione ? m.officina_revisione : '') + '"></label>' +
+            '<label class="campo">Scadenza revisione<input type="date" name="scadenza_revisione" value="' + (m && m.scadenza_revisione ? m.scadenza_revisione : '') + '"></label>' +
+          '</div><p class="nota" id="nota-revisione" style="margin-top:8px"></p></fieldset>' +
           '<p class="errore" id="err"></p>' +
           '<div class="riga-azioni"><button class="btn btn-primario" type="submit">' + (m ? 'Salva modifiche' : 'Aggiungi mezzo') + '</button>' +
           (m ? '<a class="btn" href="#/mezzi">Annulla</a>' : '') + '</div>' +
-        '</form>');
+        '</form>' +
+        '<section class="pannello" id="complessi"><h2>Complessi veicolari</h2>' +
+          '<p class="nota" style="margin:6px 0 16px">Abbina una motrice a un rimorchio (autotreno) o un trattore a un semirimorchio. Nel piano di carico potrai usare la motrice da sola oppure l’intero complesso.</p>' +
+          (elencoComplessi ? '<div class="tabella-scroll"><table><thead><tr><th>Tipo</th><th>Nome</th><th>Trainante</th><th>Rimorchio</th><th></th></tr></thead><tbody>' + elencoComplessi + '</tbody></table></div>' : '') +
+          (trainanti.length && rimorchiati.length ?
+            '<form id="form-complesso" class="griglia-form" style="margin-top:16px" novalidate>' +
+              '<label class="campo">Mezzo trainante<select name="trainante_id" id="c-trainante">' +
+                trainanti.map(function (x) { return '<option value="' + x.id + '">' + CATEGORIE[x.categoria].nome + ': ' + esc(nomeMezzo(x)) + '</option>'; }).join('') +
+              '</select></label>' +
+              '<label class="campo">Rimorchio o semirimorchio<select name="rimorchio_id" id="c-rimorchio"></select></label>' +
+              '<label class="campo">Nome (facoltativo)<input type="text" name="nome" placeholder="Es. Autotreno 1"></label>' +
+              '<div class="campo" style="justify-content:flex-end"><button class="btn btn-scuro" type="submit">Crea complesso</button></div>' +
+            '</form><p class="errore" id="err-c"></p>'
+            : '<p class="nota">Per creare un complesso inserisci prima una motrice e un rimorchio, oppure un trattore e un semirimorchio.</p>') +
+        '</section>');
 
       var form = main.querySelector('#form-mezzo');
-      var sel = main.querySelector('#modello');
-      if (sel) sel.onchange = function () {
-        var x = MODELLI_MEZZO[sel.value];
+      var selCat = main.querySelector('#categoria');
+      var selMod = main.querySelector('#modello');
+      function aggiornaCampi() {
+        var c = CATEGORIE[selCat.value];
+        main.querySelector('#campi-vano').hidden = !c.vano;
+        main.querySelector('#campi-motore').hidden = !c.motore;
+        selMod.innerHTML = '<option value="">Scegli…</option>' + MODELLI_MEZZO.map(function (x, i) {
+          return x.categoria === selCat.value ? '<option value="' + i + '">' + x.nome + '</option>' : '';
+        }).join('');
+        main.querySelector('#nota-revisione').textContent = c.anni === 2
+          ? 'Fino a 3,5 t: prima revisione dopo 4 anni dall’immatricolazione, poi ogni 2 anni. La scadenza proposta è indicativa: fa fede la carta di circolazione.'
+          : 'Mezzi pesanti e rimorchi oltre 3,5 t: revisione ogni anno. La scadenza proposta è indicativa: fa fede la carta di circolazione.';
+      }
+      selCat.onchange = aggiornaCampi;
+      aggiornaCampi();
+      selMod.onchange = function () {
+        var x = MODELLI_MEZZO[selMod.value];
         if (!x) return;
-        ['lunghezza', 'larghezza', 'altezza', 'portata'].forEach(function (k) { form.elements[k].value = x[k]; });
+        ['lunghezza', 'larghezza', 'altezza', 'portata', 'consumo'].forEach(function (k) { if (x[k]) form.elements[k].value = x[k]; });
         if (!form.elements.nome.value) form.elements.nome.value = x.nome;
       };
+      // Scadenza proposta dalla data dell'ultima revisione
+      var scadAuto = !(m && m.scadenza_revisione);
+      form.elements.scadenza_revisione.oninput = function () { scadAuto = false; };
+      form.elements.ultima_revisione.onchange = function () {
+        var v = form.elements.ultima_revisione.value;
+        if (v && (scadAuto || !form.elements.scadenza_revisione.value)) {
+          form.elements.scadenza_revisione.value = aggiungiAnni(v, CATEGORIE[selCat.value].anni);
+          scadAuto = true;
+        }
+      };
+      if (m) form.scrollIntoView({ block: 'start' });
       form.onsubmit = function (e) {
         e.preventDefault();
         var v = valoriForm(form);
@@ -243,38 +397,116 @@
         }).catch(function (err) { main.querySelector('#err').textContent = err.message; });
       };
       main.querySelectorAll('[data-mod]').forEach(function (b) {
-        b.onclick = function () { vistaMezzi(Number(b.dataset.mod)); window.scrollTo(0, document.body.scrollHeight); };
+        b.onclick = function () { vistaMezzi(Number(b.dataset.mod)); };
       });
       main.querySelectorAll('[data-del]').forEach(function (b) {
         b.onclick = function () {
-          if (!confirm('Eliminare questo mezzo? I piani già salvati restano consultabili.')) return;
+          if (!confirm('Eliminare questo mezzo? Verranno eliminati anche i complessi di cui fa parte. I piani già salvati restano consultabili.')) return;
           api('DELETE', '/api/mezzi/' + b.dataset.del).then(function () { avvisa('Mezzo eliminato'); vistaMezzi(); });
+        };
+      });
+
+      // Complessi
+      var selT = main.querySelector('#c-trainante'), selR = main.querySelector('#c-rimorchio');
+      if (selT) {
+        var aggiornaR = function () {
+          var t = perId[Number(selT.value)];
+          var serve = t.categoria === 'motrice' ? 'rimorchio' : 'semirimorchio';
+          var ok = rimorchiati.filter(function (x) { return x.categoria === serve; });
+          selR.innerHTML = ok.length
+            ? ok.map(function (x) { return '<option value="' + x.id + '">' + CATEGORIE[x.categoria].nome + ': ' + esc(nomeMezzo(x)) + '</option>'; }).join('')
+            : '<option value="">Nessun ' + serve + ' inserito</option>';
+        };
+        selT.onchange = aggiornaR;
+        aggiornaR();
+        main.querySelector('#form-complesso').onsubmit = function (e) {
+          e.preventDefault();
+          api('POST', '/api/complessi', valoriForm(this)).then(function () { avvisa('Complesso creato'); vistaMezzi(); })
+            .catch(function (err) { main.querySelector('#err-c').textContent = err.message; });
+        };
+      }
+      main.querySelectorAll('[data-delc]').forEach(function (b) {
+        b.onclick = function () {
+          if (!confirm('Eliminare questo complesso? I mezzi restano in archivio.')) return;
+          api('DELETE', '/api/complessi/' + b.dataset.delc).then(function () { avvisa('Complesso eliminato'); vistaMezzi(); });
         };
       });
     }).catch(errorePagina);
   }
 
   // ---------- Piano di carico ----------
+  // Carica i colli nei vani dell'unità, uno dopo l'altro (motrice, poi rimorchio)
+  function pianificaUnita(scomparti, righe) {
+    var restanti = righe.map(function (r) { return Object.assign({}, r); });
+    var esiti = scomparti.map(function (m) {
+      var mezzo = perVano(m);
+      var ris = window.Stiva.pianificaCarico(mezzo, restanti);
+      var conta = restanti.map(function () { return 0; });
+      ris.nonCaricati.forEach(function (n) { conta[n.tipo]++; });
+      restanti = restanti.map(function (r, i) { return Object.assign({}, r, { quantita: conta[i] }); });
+      return { mezzo: mezzo, risultato: ris };
+    });
+    var ultimo = esiti[esiti.length - 1].risultato;
+    var st = { colliTotali: 0, colliCaricati: 0, pesoTotale: 0, portata: 0, volumeUsato: 0, volume: 0, metriLineari: 0, lunghezza: 0 };
+    righe.forEach(function (r) { st.colliTotali += Number(r.quantita) || 0; });
+    esiti.forEach(function (e) {
+      var m = e.mezzo, s = e.risultato.statistiche;
+      st.colliCaricati += s.colliCaricati;
+      st.pesoTotale += s.pesoTotale;
+      st.portata += m.portata || 0;
+      st.volume += m.lunghezza * m.larghezza * m.altezza;
+      st.volumeUsato += s.percentualeVolume / 100 * m.lunghezza * m.larghezza * m.altezza;
+      st.metriLineari += s.metriLineari;
+      st.lunghezza += m.lunghezza;
+    });
+    st.percentualePeso = st.portata ? Math.round(st.pesoTotale / st.portata * 1000) / 10 : null;
+    st.percentualeVolume = Math.round(st.volumeUsato / st.volume * 1000) / 10;
+    st.metriLineari = Math.round(st.metriLineari * 100) / 100;
+    st.baricentro = esiti.length === 1 ? esiti[0].risultato.statistiche.baricentro : null;
+    var riepilogo = righe.map(function (r, i) {
+      var c = 0;
+      esiti.forEach(function (e) { e.risultato.piazzati.forEach(function (b) { if (b.tipo === i) c++; }); });
+      return { nome: r.nome, richiesti: Number(r.quantita) || 0, caricati: c };
+    });
+    return { scomparti: esiti, statistiche: st, riepilogo: riepilogo, nonCaricati: ultimo.nonCaricati };
+  }
+
+  function righePulite(righe) {
+    return righe.filter(function (r) { return Number(r.quantita) > 0; }).map(function (r) {
+      return { nome: r.nome || 'Collo', lunghezza: Number(r.lunghezza), larghezza: Number(r.larghezza), altezza: Number(r.altezza), peso: Number(r.peso) || 0, quantita: Math.floor(Number(r.quantita)), impilabile: !!r.impilabile, ruotabile: !!r.ruotabile };
+    });
+  }
+
+  function descriviUnita(u) {
+    return u.scomparti.map(function (s) {
+      return (u.scomparti.length > 1 ? CATEGORIE[s.categoria].nome + ' ' : 'Vano ') + '<b>' + s.lunghezza + ' × ' + s.larghezza + ' × ' + s.altezza + ' cm</b>, <b>' + num(s.portata) + ' kg</b>';
+    }).join('<br>');
+  }
+
   function vistaCarico() {
-    Promise.all([caricaMezzi(), api('GET', '/api/colli')]).then(function (res) {
+    Promise.all([caricaFlotta(), api('GET', '/api/colli')]).then(function (res) {
       stato.colliSalvati = res[1];
-      var mezzi = res[0];
-      if (!mezzi.length) {
+      var unita = unitaDiCarico(res[0]);
+      if (!unita.length) {
         guscio('carico', '<div class="testata"><div><h1>Piano di carico</h1></div></div>' +
-          '<div class="vuoto"><h2>Nessun mezzo salvato</h2><p>Per calcolare un carico serve almeno un mezzo con le misure del vano.</p>' +
+          '<div class="vuoto"><h2>Nessun mezzo con vano di carico</h2><p>Per calcolare un carico serve almeno un furgone, una motrice o un semirimorchio con le misure del vano.</p>' +
           '<a class="btn btn-primario" href="#/mezzi">Aggiungi un mezzo</a></div>');
         return;
       }
       var p = stato.piano;
-      if (!mezzi.some(function (m) { return m.id === p.mezzoId; })) p.mezzoId = mezzi[0].id;
+      if (!unita.some(function (u) { return u.chiave === p.unita; })) p.unita = unita[0].chiave;
       if (!p.righe.length) p.righe.push(Object.assign({}, MODELLI_COLLO.eur, { quantita: 10 }));
+      function opzione(u) { return '<option value="' + u.chiave + '"' + (u.chiave === p.unita ? ' selected' : '') + '>' + esc(u.nome) + (u.scadute.length ? ' – revisione scaduta' : '') + '</option>'; }
+      var singoli = unita.filter(function (u) { return !u.complesso; }), complessi = unita.filter(function (u) { return u.complesso; });
 
       var main = guscio('carico',
-        '<div class="testata"><div><h1>Piano di carico</h1><p>Scegli il mezzo, inserisci i colli e il programma li dispone dal fondo del vano verso le porte.</p></div></div>' +
+        '<div class="testata"><div><h1>Piano di carico</h1><p>Scegli il mezzo, inserisci i colli e il programma li dispone dal fondo del vano verso le porte. Non sai quale mezzo usare? Chiedi al programma qual è il più piccolo che basta.</p></div></div>' +
         '<div class="pannello">' +
           '<div class="scelta-mezzo"><label class="campo">Mezzo<select id="mezzo">' +
-            mezzi.map(function (m) { return '<option value="' + m.id + '"' + (m.id === p.mezzoId ? ' selected' : '') + '>' + esc(m.nome) + (m.targa ? ' (' + esc(m.targa) + ')' : '') + '</option>'; }).join('') +
+            '<optgroup label="Mezzi">' + singoli.map(opzione).join('') + '</optgroup>' +
+            (complessi.length ? '<optgroup label="Complessi veicolari">' + complessi.map(opzione).join('') + '</optgroup>' : '') +
           '</select></label><div class="misure-mezzo" id="misure"></div></div>' +
+          '<div id="avviso-revisione"></div>' +
         '</div>' +
         '<div class="pannello">' +
           '<h2 style="margin-bottom:14px">Colli da caricare</h2>' +
@@ -291,17 +523,22 @@
               '</select>' : '') +
           '</div>' +
           '<div class="barra-calcolo"><div class="totali-colli" id="totali"></div>' +
-          '<button class="btn btn-primario" id="calcola">Calcola carico</button></div>' +
+          '<div class="riga-azioni"><button class="btn" id="quale-mezzo">Quale mezzo basta?</button>' +
+          '<button class="btn btn-primario" id="calcola">Calcola carico</button></div></div>' +
           '<p class="errore" id="err"></p>' +
         '</div>' +
+        '<div id="consiglio"></div>' +
         '<div id="risultato"></div>');
 
       var selMezzo = main.querySelector('#mezzo');
-      function mezzoScelto() { return stato.mezzi.filter(function (m) { return m.id === Number(selMezzo.value); })[0]; }
+      function unitaScelta() { return unita.filter(function (u) { return u.chiave === selMezzo.value; })[0]; }
       function aggiornaMisure() {
-        var m = mezzoScelto();
-        p.mezzoId = m.id;
-        main.querySelector('#misure').innerHTML = 'Vano <b>' + m.lunghezza + ' × ' + m.larghezza + ' × ' + m.altezza + ' cm</b>, portata <b>' + num(m.portata) + ' kg</b>';
+        var u = unitaScelta();
+        p.unita = u.chiave;
+        main.querySelector('#misure').innerHTML = descriviUnita(u);
+        main.querySelector('#avviso-revisione').innerHTML = u.scadute.length
+          ? '<div class="avviso" style="margin:14px 0 0">Revisione scaduta: ' + u.scadute.map(function (m) { return esc(nomeMezzo(m)) + ' (' + dataIt(m.scadenza_revisione) + ')'; }).join(', ') + '. Il mezzo non può circolare finché non viene revisionato.</div>'
+          : '';
       }
       selMezzo.onchange = function () { aggiornaMisure(); p.risultato = null; main.querySelector('#risultato').innerHTML = ''; chiudi3D(); };
       aggiornaMisure();
@@ -330,8 +567,9 @@
       tbody.addEventListener('input', function (e) {
         var k = e.target.dataset.k; if (!k) return;
         var r = p.righe[Number(e.target.closest('tr').dataset.i)];
-        r[k] = e.target.type === 'checkbox' ? e.target.checked : (e.target.type === 'number' ? e.target.value : e.target.value);
+        r[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
         aggiornaTotali();
+        main.querySelector('#consiglio').innerHTML = '';
       });
       tbody.addEventListener('click', function (e) {
         var t = e.target;
@@ -357,112 +595,185 @@
       };
       disegnaRighe();
 
-      main.querySelector('#calcola').onclick = function () {
+      function controllaRighe() {
         var err = main.querySelector('#err');
         err.textContent = '';
-        var righe = p.righe.filter(function (r) { return Number(r.quantita) > 0; });
+        var righe = righePulite(p.righe);
         for (var i = 0; i < righe.length; i++) {
           var r = righe[i];
-          if (!(r.lunghezza > 0 && r.larghezza > 0 && r.altezza > 0)) { err.textContent = 'Controlla le misure di "' + (r.nome || 'collo') + '": devono essere maggiori di zero.'; return; }
+          if (!(r.lunghezza > 0 && r.larghezza > 0 && r.altezza > 0)) { err.textContent = 'Controlla le misure di "' + r.nome + '": devono essere maggiori di zero.'; return null; }
         }
-        if (!righe.length) { err.textContent = 'Inserisci almeno un collo con quantità maggiore di zero.'; return; }
-        var btn = this; btn.disabled = true; btn.textContent = 'Calcolo in corso…';
+        if (!righe.length) { err.textContent = 'Inserisci almeno un collo con quantità maggiore di zero.'; return null; }
+        return righe;
+      }
+
+      function calcola() {
+        var righe = controllaRighe(); if (!righe) return;
+        var btn = main.querySelector('#calcola'); btn.disabled = true; btn.textContent = 'Calcolo in corso…';
         setTimeout(function () {
           try {
-            var m = mezzoScelto();
-            var pulite = righe.map(function (r) {
-              return { nome: r.nome || 'Collo', lunghezza: Number(r.lunghezza), larghezza: Number(r.larghezza), altezza: Number(r.altezza), peso: Number(r.peso) || 0, quantita: Math.floor(Number(r.quantita)), impilabile: !!r.impilabile, ruotabile: !!r.ruotabile };
-            });
-            p.risultato = window.Stiva.pianificaCarico(m, pulite);
-            p.mezzo = { nome: m.nome, targa: m.targa, lunghezza: m.lunghezza, larghezza: m.larghezza, altezza: m.altezza, portata: m.portata };
-            p.righeCalcolate = pulite;
-            mostraRisultato(main.querySelector('#risultato'), p.mezzo, pulite, p.risultato, true);
+            var u = unitaScelta();
+            var esito = pianificaUnita(u.scomparti, righe);
+            p.risultato = esito;
+            mostraRisultato(main.querySelector('#risultato'), u.nome, righe, esito, true);
             main.querySelector('#risultato').scrollIntoView({ behavior: 'smooth', block: 'start' });
-          } catch (ex) { err.textContent = ex.message; }
+          } catch (ex) { main.querySelector('#err').textContent = ex.message; }
           btn.disabled = false; btn.textContent = 'Calcola carico';
         }, 30);
+      }
+      main.querySelector('#calcola').onclick = calcola;
+
+      // "Quale mezzo basta?": prova il carico su tutta la flotta
+      main.querySelector('#quale-mezzo').onclick = function () {
+        var righe = controllaRighe(); if (!righe) return;
+        var btn = this, box = main.querySelector('#consiglio');
+        btn.disabled = true; btn.textContent = 'Provo tutti i mezzi…';
+        var ordinate = unita.slice().sort(function (a, b) { return (a.volume - b.volume) || (a.portata - b.portata); });
+        var prove = [], i = 0;
+        (function prossima() {
+          if (i >= ordinate.length) { mostraConsiglio(prove); btn.disabled = false; btn.textContent = 'Quale mezzo basta?'; return; }
+          var u = ordinate[i++];
+          try {
+            var e = pianificaUnita(u.scomparti, righe);
+            prove.push({ u: u, st: e.statistiche, resto: e.nonCaricati });
+          } catch (ex) { prove.push({ u: u, errore: ex.message }); }
+          setTimeout(prossima, 0);
+        })();
+
+        function mostraConsiglio(prove) {
+          var buone = prove.filter(function (x) { return !x.errore && !x.resto.length; });
+          var migliore = buone.filter(function (x) { return !x.u.scadute.length; })[0];
+          var scartata = buone[0] && buone[0].u.scadute.length && buone[0] !== migliore ? buone[0] : null;
+          var testa;
+          if (migliore) {
+            testa = '<div class="consiglio-testa"><div><span class="etichetta-consiglio">Mezzo consigliato</span><h2>' + esc(migliore.u.nome) + '</h2>' +
+              '<p>È il più piccolo della flotta in cui entra tutto il carico: occupa il ' + num(migliore.st.percentualeVolume, 0) + '% del volume e il ' + num(migliore.st.percentualePeso || 0, 0) + '% della portata.' +
+              (scartata ? ' Ho scartato ' + esc(scartata.u.nome) + ', più piccolo, perché ha la revisione scaduta.' : '') + '</p></div>' +
+              '<button class="btn btn-primario" data-usa="' + migliore.u.chiave + '">Usa questo mezzo</button></div>';
+          } else if (buone.length) {
+            testa = '<div class="avviso">Il carico entra solo in mezzi con la revisione scaduta. Revisionali prima di partire.</div>';
+          } else {
+            var max = prove.filter(function (x) { return !x.errore; }).sort(function (a, b) { return b.st.colliCaricati - a.st.colliCaricati; })[0];
+            testa = '<div class="avviso">Nessun mezzo della flotta contiene tutto il carico.' + (max ? ' Quello che ne porta di più è ' + esc(max.u.nome) + ', con ' + max.st.colliCaricati + ' colli su ' + max.st.colliTotali + '. Valuta un complesso veicolare o più viaggi.' : '') + '</div>';
+          }
+          box.innerHTML = '<div class="pannello consiglio">' + testa +
+            '<div class="tabella-scroll" style="margin-top:16px"><table><thead><tr><th>Mezzo</th><th class="num">Volume vano</th><th>Esito</th><th class="num">Volume occupato</th><th class="num">Portata usata</th><th>Revisione</th><th></th></tr></thead><tbody>' +
+            prove.map(function (x) {
+              var esitoTesto = x.errore ? '<span class="etichetta no">' + esc(x.errore) + '</span>'
+                : (!x.resto.length ? '<span class="etichetta ok">Entra tutto</span>'
+                  : '<span class="etichetta no">Restano ' + x.resto.length + ' colli' + (x.resto.some(function (n) { return n.motivo === 'peso'; }) ? ' (peso)' : '') + '</span>');
+              return '<tr class="' + (migliore && x === migliore ? 'riga-scelta' : '') + '"><td><b>' + esc(x.u.nome) + '</b></td>' +
+                '<td class="num">' + num(x.u.volume / 1e6, 1) + ' m³</td><td>' + esitoTesto + '</td>' +
+                '<td class="num">' + (x.st ? num(x.st.percentualeVolume, 0) + '%' : '–') + '</td>' +
+                '<td class="num">' + (x.st && x.st.percentualePeso !== null ? num(x.st.percentualePeso, 0) + '%' : '–') + '</td>' +
+                '<td>' + (x.u.scadute.length ? '<span class="etichetta rev-scaduta">Scaduta</span>' : '<span class="nota">ok</span>') + '</td>' +
+                '<td class="num"><button class="btn-testo" data-usa="' + x.u.chiave + '">Usa</button></td></tr>';
+            }).join('') + '</tbody></table></div></div>';
+          box.querySelectorAll('[data-usa]').forEach(function (b) {
+            b.onclick = function () { selMezzo.value = b.dataset.usa; aggiornaMisure(); calcola(); };
+          });
+          box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       };
     }).catch(errorePagina);
   }
 
+  // Converte i piani salvati con la versione precedente (un solo vano)
+  function esitoDaSalvato(p) {
+    if (p.risultato && p.risultato.scomparti) return { nome: p.mezzo.nome, esito: p.risultato };
+    var r = p.risultato;
+    var st = Object.assign({ lunghezza: p.mezzo.lunghezza }, r.statistiche);
+    return { nome: p.mezzo.nome, esito: { scomparti: [{ mezzo: p.mezzo, risultato: r }], statistiche: st, riepilogo: r.riepilogo, nonCaricati: r.nonCaricati } };
+  }
+
   // Risultato: usato sia dopo il calcolo sia per i piani salvati
-  function mostraRisultato(box, mezzo, righe, ris, salvabile, titolo) {
+  function mostraRisultato(box, nomeUnita, righe, esito, salvabile, titolo) {
     chiudi3D();
-    var s = ris.statistiche;
+    var s = esito.statistiche, piu = esito.scomparti.length > 1;
     function barra(pct, allarme) { return '<div class="barretta"><i class="' + (allarme && pct >= 100 ? 'pieno' : '') + '" style="width:' + Math.min(100, pct) + '%"></i></div>'; }
 
     var gruppi = {};
-    ris.nonCaricati.forEach(function (n) {
+    esito.nonCaricati.forEach(function (n) {
       var k = n.nome + '|' + n.motivo;
       gruppi[k] = gruppi[k] || { nome: n.nome, motivo: n.motivo, q: 0 };
       gruppi[k].q++;
     });
     var elencoNon = Object.keys(gruppi).map(function (k) {
       var g = gruppi[k];
-      return '<li>' + g.q + ' × ' + esc(g.nome) + (g.motivo === 'peso' ? ': supererebbero la portata del mezzo' : ': non c’è più spazio nel vano') + '</li>';
+      return '<li>' + g.q + ' × ' + esc(g.nome) + (g.motivo === 'peso' ? ': supererebbero la portata' : ': non c’è più spazio') + '</li>';
     }).join('');
+    var avvisi = esito.nonCaricati.length ? '<div class="avviso"><b>' + esito.nonCaricati.length + ' colli restano a terra</b><ul>' + elencoNon + '</ul></div>' : '';
 
-    var avvisi = '';
-    if (ris.nonCaricati.length) {
-      avvisi += '<div class="avviso"><b>' + ris.nonCaricati.length + ' colli restano a terra</b><ul>' + elencoNon + '</ul></div>';
-    }
-    if (s.baricentro !== null && s.metriLineari > 0) {
-      var rel = s.baricentro / mezzo.lunghezza;
-      if (rel < 0.25 || rel > 0.65) {
-        avvisi += '<div class="avviso giallo">Il peso è concentrato ' + (rel < 0.25 ? 'verso la cabina' : 'verso le porte') +
-          ': verifica la ripartizione del carico sugli assi prima di partire.</div>';
+    var sezioni = esito.scomparti.map(function (sc, k) {
+      var m = sc.mezzo, r = sc.risultato, st = r.statistiche;
+      var conteggi = righe.map(function () { return 0; });
+      r.piazzati.forEach(function (b) { conteggi[b.tipo]++; });
+      var legenda = righe.map(function (rg, i) {
+        if (!conteggi[i] && piu) return '';
+        return '<span><i class="pallino" style="background:' + COLORI[i % COLORI.length] + '"></i>' + esc(rg.nome) + ' ' + conteggi[i] + (piu ? '' : '/' + esito.riepilogo[i].richiesti) + '</span>';
+      }).join('');
+      var avvisoBar = '';
+      if (st.baricentro !== null && st.metriLineari > 0) {
+        var rel = st.baricentro / m.lunghezza;
+        if (rel < 0.25 || rel > 0.65) avvisoBar = '<div class="avviso giallo">Il peso è concentrato ' + (rel < 0.25 ? 'verso la parte anteriore' : 'verso le porte') + ': verifica la ripartizione del carico sugli assi prima di partire.</div>';
       }
-    }
-
-    var legenda = righe.map(function (r, i) {
-      var rp = ris.riepilogo[i];
-      return '<span><i class="pallino" style="background:' + COLORI[i % COLORI.length] + '"></i>' + esc(r.nome) + ' ' + rp.caricati + '/' + rp.richiesti + '</span>';
+      var etich = m.categoria && CATEGORIE[m.categoria] ? CATEGORIE[m.categoria].nome : 'Vano';
+      return '<div class="sezione-vano" data-k="' + k + '">' +
+        (piu ? '<div class="testa-vano"><h2>' + etich + ': ' + esc(m.nome) + (m.targa && m.targa !== m.nome ? ' (' + esc(m.targa) + ')' : '') + '</h2>' +
+          '<p class="nota">Vano ' + m.lunghezza + ' × ' + m.larghezza + ' × ' + m.altezza + ' cm. ' + st.colliCaricati + ' colli, ' + num(st.pesoTotale) + ' kg (' + num(st.percentualePeso || 0, 0) + '% della portata), ' + num(st.metriLineari, 2) + ' m occupati' +
+          (st.baricentro !== null ? ', baricentro a ' + num(st.baricentro / 100, 2) + ' m dal fronte' : '') + '.</p></div>' : '') +
+        avvisoBar +
+        '<div class="viste">' +
+          '<section class="vista"><div class="vista-testa"><h3>Vista 3D</h3><div class="riga-azioni no-stampa">' +
+            '<span class="nota">Trascina per ruotare, rotellina per lo zoom</span>' +
+            '<button class="btn btn-piccolo" data-cam="lato">Di lato</button><button class="btn btn-piccolo" data-cam="porte">Dalle porte</button><button class="btn btn-piccolo" data-cam="reset">Prospettiva</button>' +
+          '</div></div><div class="tela3d"></div><div class="legenda">' + legenda + '</div>' +
+          (window.creditiModello3D && window.creditiModello3D(m) ? '<div class="crediti">' + window.creditiModello3D(m) + '</div>' : '') + '</section>' +
+          '<section class="vista"><div class="vista-testa"><h3>Vista dall’alto, strato per strato</h3><div class="strati"></div></div>' +
+          '<div class="pianta"><div class="pianta-svg"></div><div class="orientamento"><span>◀ ' + (m.categoria === 'semirimorchio' || m.categoria === 'rimorchio' ? 'Fronte' : 'Cabina') + '</span><span>Porte ▶</span></div></div>' +
+          '<div class="legenda legenda-strato"></div></section>' +
+        '</div></div>';
     }).join('');
 
     box.innerHTML =
       '<div class="risultato">' +
         '<div class="testata" style="margin-bottom:0"><div><h1>' + esc(titolo || 'Risultato') + '</h1>' +
-        '<p>' + esc(mezzo.nome) + (mezzo.targa ? ' (' + esc(mezzo.targa) + ')' : '') + ', vano ' + mezzo.lunghezza + ' × ' + mezzo.larghezza + ' × ' + mezzo.altezza + ' cm</p></div>' +
+        '<p>' + esc(nomeUnita) + (piu ? '' : ', vano ' + esito.scomparti[0].mezzo.lunghezza + ' × ' + esito.scomparti[0].mezzo.larghezza + ' × ' + esito.scomparti[0].mezzo.altezza + ' cm') + '</p></div>' +
         '<div class="riga-azioni"><button class="btn" id="stampa">Stampa</button></div></div>' +
         '<div class="cruscotto">' +
           '<div><div class="valore">' + s.colliCaricati + '<span style="font-size:18px;color:var(--grigio)"> / ' + s.colliTotali + '</span></div><div class="desc">colli caricati</div>' + barra(s.colliCaricati / Math.max(1, s.colliTotali) * 100) + '</div>' +
           '<div><div class="valore">' + num(s.pesoTotale) + ' kg</div><div class="desc">' + (s.percentualePeso !== null ? num(s.percentualePeso, 1) + '% della portata' : 'peso totale') + '</div>' + barra(s.percentualePeso || 0, true) + '</div>' +
-          '<div><div class="valore">' + num(s.percentualeVolume, 1) + '%</div><div class="desc">volume del vano occupato</div>' + barra(s.percentualeVolume) + '</div>' +
-          '<div><div class="valore">' + num(s.metriLineari, 2) + ' m</div><div class="desc">metri lineari occupati su ' + num(mezzo.lunghezza / 100, 2) + '</div>' + barra(s.metriLineari * 100 / mezzo.lunghezza * 100) + '</div>' +
-          '<div><div class="valore">' + (s.baricentro !== null ? num(s.baricentro / 100, 2) + ' m' : '–') + '</div><div class="desc">baricentro, dalla parete cabina</div></div>' +
+          '<div><div class="valore">' + num(s.percentualeVolume, 1) + '%</div><div class="desc">volume ' + (piu ? 'dei vani' : 'del vano') + ' occupato</div>' + barra(s.percentualeVolume) + '</div>' +
+          '<div><div class="valore">' + num(s.metriLineari, 2) + ' m</div><div class="desc">metri lineari occupati su ' + num(s.lunghezza / 100, 2) + '</div>' + barra(s.metriLineari * 100 / s.lunghezza * 100) + '</div>' +
+          '<div><div class="valore">' + (piu ? esito.scomparti.length + ' vani' : (s.baricentro !== null ? num(s.baricentro / 100, 2) + ' m' : '–')) + '</div><div class="desc">' + (piu ? 'motrice e rimorchio' : 'baricentro, dal fronte del vano') + '</div></div>' +
         '</div>' +
-        avvisi +
-        '<div class="viste">' +
-          '<section class="vista"><div class="vista-testa"><h3>Vista 3D</h3><div class="riga-azioni no-stampa">' +
-            '<span class="nota">Trascina per ruotare, rotellina per lo zoom</span>' +
-            '<button class="btn btn-piccolo" data-cam="lato">Di lato</button><button class="btn btn-piccolo" data-cam="porte">Dalle porte</button><button class="btn btn-piccolo" data-cam="reset">Prospettiva</button>' +
-          '</div></div><div class="tela3d" id="tela3d"></div><div class="legenda">' + legenda + '</div>' +
-          (window.creditiModello3D && window.creditiModello3D(mezzo) ? '<div class="crediti">' + window.creditiModello3D(mezzo) + '</div>' : '') + '</section>' +
-          '<section class="vista"><div class="vista-testa"><h3>Vista dall’alto, strato per strato</h3><div class="strati" id="strati"></div></div>' +
-          '<div class="pianta"><div id="pianta"></div><div class="orientamento"><span>◀ Cabina</span><span>Porte ▶</span></div></div>' +
-          '<div class="legenda" id="legenda-strato"></div></section>' +
-        '</div>' +
+        avvisi + sezioni +
         (salvabile ?
           '<div class="pannello salva-piano" style="margin-top:22px"><input type="text" id="nome-piano" placeholder="Nome del piano, es. Consegna Rossi 14/10">' +
           '<button class="btn btn-scuro" id="salva-piano">Salva piano</button><span class="errore" id="err-salva"></span></div>' : '') +
       '</div>';
 
-    stato.vista3d = window.creaVista3D(box.querySelector('#tela3d'), mezzo, ris.piazzati, COLORI);
-    box.querySelectorAll('[data-cam]').forEach(function (b) {
-      b.onclick = function () {
-        if (!stato.vista3d || !stato.vista3d.vista) return;
-        if (b.dataset.cam === 'lato') stato.vista3d.vista(-Math.PI / 2, 1.45, 0.78);
-        else if (b.dataset.cam === 'porte') stato.vista3d.vista(0.04, 1.4, 0.95);
-        else stato.vista3d.ripristina();
-      };
+    box.querySelectorAll('.sezione-vano').forEach(function (sez) {
+      var sc = esito.scomparti[Number(sez.dataset.k)];
+      var v = window.creaVista3D(sez.querySelector('.tela3d'), sc.mezzo, sc.risultato.piazzati, COLORI);
+      stato.viste3d.push(v);
+      sez.querySelectorAll('[data-cam]').forEach(function (b) {
+        b.onclick = function () {
+          if (!v.vista) return;
+          if (b.dataset.cam === 'lato') v.vista(-Math.PI / 2, 1.45, 0.78);
+          else if (b.dataset.cam === 'porte') v.vista(0.04, 1.4, 0.95);
+          else v.ripristina();
+        };
+      });
+      disegnaStrati(sez, sc.mezzo, sc.risultato.piazzati);
     });
-    disegnaStrati(box, mezzo, righe, ris.piazzati);
     box.querySelector('#stampa').onclick = function () { window.print(); };
 
     if (salvabile) {
       box.querySelector('#salva-piano').onclick = function () {
         var nome = box.querySelector('#nome-piano').value.trim();
-        api('POST', '/api/piani', { nome: nome, mezzo: mezzo, colli: righe, risultato: ris }).then(function () {
+        var mezzo = { nome: nomeUnita, scomparti: esito.scomparti.map(function (x) { return x.mezzo; }) };
+        api('POST', '/api/piani', { nome: nome, mezzo: mezzo, colli: righe, risultato: esito }).then(function () {
           avvisa('Piano salvato');
           box.querySelector('#nome-piano').value = '';
         }).catch(function (err) { box.querySelector('#err-salva').textContent = err.message; });
@@ -470,16 +781,16 @@
     }
   }
 
-  function disegnaStrati(box, mezzo, righe, piazzati) {
+  function disegnaStrati(sez, mezzo, piazzati) {
     var quote = [];
     piazzati.forEach(function (b) { if (quote.indexOf(b.z) < 0) quote.push(b.z); });
     quote.sort(function (a, b) { return a - b; });
-    var ctrl = box.querySelector('#strati');
+    var ctrl = sez.querySelector('.strati');
     var L = mezzo.lunghezza, W = mezzo.larghezza;
-    if (!quote.length) { box.querySelector('#pianta').innerHTML = '<p class="nota">Nessun collo caricato.</p>'; return; }
+    if (!quote.length) { sez.querySelector('.pianta-svg').innerHTML = '<p class="nota">Nessun collo caricato in questo vano.</p>'; return; }
     ctrl.innerHTML = quote.length > 1
-      ? '<input type="range" min="0" max="' + (quote.length - 1) + '" value="0" id="strato" aria-label="Strato"><span id="strato-nome"></span>'
-      : '<span id="strato-nome"></span>';
+      ? '<input type="range" min="0" max="' + (quote.length - 1) + '" value="0" class="cursore-strato" aria-label="Strato"><span class="strato-nome"></span>'
+      : '<span class="strato-nome"></span>';
 
     function disegna(i) {
       var q = quote[i];
@@ -504,16 +815,16 @@
             '<rect x="' + b.x + '" y="' + b.y + '" width="' + b.l + '" height="' + b.w + '" fill="' + c + '" stroke="#fff" stroke-width="2"/>' + etich + x + '</g>';
         }).join('') +
         '</svg>';
-      box.querySelector('#pianta').innerHTML = svg;
-      box.querySelector('#strato-nome').textContent = 'Strato ' + (i + 1) + ' di ' + quote.length + ', da ' + q + ' cm di altezza';
+      sez.querySelector('.pianta-svg').innerHTML = svg;
+      sez.querySelector('.strato-nome').textContent = 'Strato ' + (i + 1) + ' di ' + quote.length + ', da ' + q + ' cm di altezza';
       var peso = sopra.reduce(function (a, b) { return a + b.peso; }, 0);
-      box.querySelector('#legenda-strato').innerHTML =
+      sez.querySelector('.legenda-strato').innerHTML =
         '<span>' + sopra.length + ' colli in questo strato, ' + num(peso) + ' kg</span>' +
         (sotto.length ? '<span><i class="pallino" style="background:#e3e6ea"></i>colli degli strati sotto</span>' : '') +
         (sopra.some(function (b) { return !b.impilabile; }) ? '<span style="color:var(--rosso)">✕ non impilabile</span>' : '');
     }
-    var slider = box.querySelector('#strato');
-    if (slider) slider.oninput = function () { disegna(Number(slider.value)); };
+    var cursore = sez.querySelector('.cursore-strato');
+    if (cursore) cursore.oninput = function () { disegna(Number(cursore.value)); };
     disegna(0);
   }
 
@@ -546,7 +857,8 @@
     api('GET', '/api/piani/' + id).then(function (p) {
       var main = guscio('piani', '<div class="riga-azioni no-stampa" style="margin-bottom:8px"><a class="btn-testo" href="#/piani">Torna ai piani salvati</a>' +
         '<button class="btn btn-piccolo" id="riusa">Usa questi colli per un nuovo calcolo</button></div><div id="risultato"></div>');
-      mostraRisultato(main.querySelector('#risultato'), p.mezzo, p.colli, p.risultato, false, p.nome);
+      var sv = esitoDaSalvato(p);
+      mostraRisultato(main.querySelector('#risultato'), sv.nome, p.colli, sv.esito, false, p.nome);
       main.querySelector('#risultato .risultato').style.marginTop = '8px';
       main.querySelector('#riusa').onclick = function () {
         stato.piano.righe = p.colli.map(function (c) { return Object.assign({}, c); });
@@ -583,6 +895,7 @@
   function numero(v) { var x = Number(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : 0; }
   function consumoTipico(m) {
     if (m && m.consumo) return Number(m.consumo);
+    if (m && m.categoria) return { furgone: 11, motrice: 22, trattore: 31 }[m.categoria] || 31;
     var L = m ? m.lunghezza : 1360;
     return L <= 520 ? 11 : (L <= 950 ? 22 : 31);
   }
@@ -625,7 +938,7 @@
 
   function nuovoViaggio(mezzi) {
     return {
-      mezzoId: mezzi[0] ? mezzi[0].id : null, mezzo: null,
+      mezzoId: (mezzi.filter(function (m) { return !m.categoria || (CATEGORIE[m.categoria] && CATEGORIE[m.categoria].motore); })[0] || {}).id || null, mezzo: null,
       tappe: [{ nome: '', lat: null, lon: null }, { nome: '', lat: null, lon: null }],
       ritorno: false, costi: null, percorso: null
     };
@@ -654,7 +967,7 @@
           '<div class="viaggio-lato">' +
             '<section class="pannello"><h2>Percorso</h2>' +
               '<label class="campo" style="margin-top:14px">Mezzo<select id="v-mezzo"><option value="">Nessun mezzo in particolare</option>' +
-                mezzi.map(function (m) { return '<option value="' + m.id + '"' + (m.id === v.mezzoId ? ' selected' : '') + '>' + esc(m.nome) + (m.targa ? ' (' + esc(m.targa) + ')' : '') + '</option>'; }).join('') +
+                mezzi.filter(function (m) { return !m.categoria || (CATEGORIE[m.categoria] && CATEGORIE[m.categoria].motore); }).map(function (m) { return '<option value="' + m.id + '"' + (m.id === v.mezzoId ? ' selected' : '') + '>' + (m.categoria ? CATEGORIE[m.categoria].nome + ': ' : '') + esc(nomeMezzo(m)) + '</option>'; }).join('') +
               '</select></label>' +
               '<ol class="tappe" id="tappe"></ol>' +
               '<div class="riga-azioni"><button class="btn btn-piccolo" id="agg-tappa">Aggiungi tappa</button></div>' +
@@ -837,7 +1150,7 @@
         if (v.ritorno) punti.push(punti[0]);
         var m = mezzoScelto();
         var btn = this; btn.disabled = true; btn.textContent = 'Calcolo in corso…';
-        api('POST', '/api/percorsi/calcola', { punti: punti, mezzo: m ? { lunghezza: m.lunghezza, larghezza: m.larghezza, altezza: m.altezza } : null })
+        api('POST', '/api/percorsi/calcola', { punti: punti, mezzo: m ? { categoria: m.categoria, lunghezza: m.lunghezza, larghezza: m.larghezza, altezza: m.altezza } : null })
           .then(function (p) {
             p.ritorno = v.ritorno;
             v.percorso = p;
@@ -939,6 +1252,80 @@
       if (v.percorso) aggiornaMappa(true);
       disegnaSalvati(salvati);
       setTimeout(function () { if (stato.mappa) stato.mappa.invalidateSize(); }, 100);
+    }).catch(errorePagina);
+  }
+
+  // ---------- Scadenze (revisioni) ----------
+  function vistaScadenze() {
+    caricaMezzi().then(function (mezzi) {
+      var filtro = stato.filtroScadenze || 'tutte';
+      var elenco = mezzi.map(function (m) { return { m: m, s: statoRevisione(m) }; });
+      elenco.sort(function (a, b) {
+        if (a.s.g === null && b.s.g === null) return a.m.nome.localeCompare(b.m.nome);
+        if (a.s.g === null) return 1;
+        if (b.s.g === null) return -1;
+        return a.s.g - b.s.g;
+      });
+      var conta = { scaduta: 0, vicina: 0, ok: 0, nd: 0 };
+      elenco.forEach(function (x) { conta[x.s.cls]++; });
+      var visibili = elenco.filter(function (x) { return filtro === 'tutte' || x.s.cls === filtro; });
+      var filtri = [['tutte', 'Tutte', elenco.length], ['scaduta', 'Scadute', conta.scaduta], ['vicina', 'Entro 30 giorni', conta.vicina], ['ok', 'In regola', conta.ok], ['nd', 'Da inserire', conta.nd]];
+
+      var main = guscio('scadenze',
+        '<div class="testata"><div><h1>Scadenze</h1><p>Le revisioni di tutti i mezzi della flotta, compresi trattori e rimorchi, ordinate per urgenza.</p></div>' +
+        '<div class="riga-azioni no-stampa"><button class="btn" id="stampa">Stampa</button></div></div>' +
+        (mezzi.length ?
+          '<div class="filtri-scadenze no-stampa">' + filtri.map(function (f) {
+            return '<button class="filtro filtro-' + f[0] + (f[0] === filtro ? ' attivo' : '') + '" data-filtro="' + f[0] + '"><b>' + f[2] + '</b> ' + f[1] + '</button>';
+          }).join('') + '</div>' +
+          '<div class="pannello tabella-scroll"><table class="tab-scadenze"><thead><tr><th>Stato</th><th>Mezzo</th><th>Targa</th><th>Ultima revisione</th><th>Officina</th><th>Scadenza</th><th class="no-stampa"></th></tr></thead><tbody>' +
+          (visibili.length ? visibili.map(function (x) {
+            var m = x.m, c = CATEGORIE[m.categoria] || { nome: '' };
+            return '<tr class="riga-' + x.s.cls + '" data-id="' + m.id + '"><td><span class="etichetta rev-' + x.s.cls + '">' + x.s.testo + '</span></td>' +
+              '<td><b>' + esc(m.nome) + '</b><div class="nota">' + c.nome + '</div></td><td>' + esc(m.targa || '') + '</td>' +
+              '<td>' + dataIt(m.ultima_revisione) + '</td><td>' + esc(m.officina_revisione || '–') + '</td>' +
+              '<td><b>' + dataIt(m.scadenza_revisione) + '</b></td>' +
+              '<td class="num no-stampa"><button class="btn btn-piccolo" data-registra="' + m.id + '">Registra revisione</button></td></tr>';
+          }).join('') : '<tr><td colspan="7" class="nota">Nessun mezzo in questo elenco.</td></tr>') +
+          '</tbody></table></div>' +
+          '<p class="nota" style="margin-top:14px">Mezzi pesanti e rimorchi oltre 3,5 t si revisionano ogni anno; i veicoli fino a 3,5 t dopo 4 anni dall’immatricolazione e poi ogni 2 anni. Fa sempre fede la carta di circolazione.</p>'
+          : '<div class="vuoto"><h2>Nessun mezzo inserito</h2><p>Aggiungi i mezzi della flotta con la data di scadenza della revisione.</p><a class="btn btn-primario" href="#/mezzi">Aggiungi un mezzo</a></div>'));
+
+      var st = main.querySelector('#stampa');
+      if (st) st.onclick = function () { window.print(); };
+      main.querySelectorAll('[data-filtro]').forEach(function (b) {
+        b.onclick = function () { stato.filtroScadenze = b.dataset.filtro; vistaScadenze(); };
+      });
+      main.querySelectorAll('[data-registra]').forEach(function (b) {
+        b.onclick = function () {
+          var vecchio = main.querySelector('.riga-registra');
+          if (vecchio) vecchio.remove();
+          var m = mezzi.filter(function (x) { return x.id === Number(b.dataset.registra); })[0];
+          var anni = (CATEGORIE[m.categoria] || { anni: 1 }).anni;
+          var tr = document.createElement('tr');
+          tr.className = 'riga-registra';
+          tr.innerHTML = '<td colspan="7"><form class="griglia-form form-registra" novalidate>' +
+            '<label class="campo">Revisione fatta il<input type="date" name="ultima_revisione" value="' + oggiIso() + '"></label>' +
+            '<label class="campo" style="grid-column:span 2">Officina o centro<input type="text" name="officina_revisione" value="' + esc(m.officina_revisione || '') + '"></label>' +
+            '<label class="campo">Nuova scadenza<input type="date" name="scadenza_revisione" value="' + aggiungiAnni(oggiIso(), anni) + '"></label>' +
+            '<div class="campo" style="justify-content:flex-end"><div class="riga-azioni"><button class="btn btn-primario" type="submit">Salva</button><button class="btn" type="button" data-annulla>Annulla</button></div></div>' +
+            '</form><p class="errore"></p></td>';
+          b.closest('tr').after(tr);
+          var f = tr.querySelector('form');
+          f.elements.ultima_revisione.onchange = function () {
+            if (this.value) f.elements.scadenza_revisione.value = aggiungiAnni(this.value, anni);
+          };
+          tr.querySelector('[data-annulla]').onclick = function () { tr.remove(); };
+          f.onsubmit = function (e) {
+            e.preventDefault();
+            api('PATCH', '/api/mezzi/' + m.id + '/revisione', valoriForm(f)).then(function () {
+              avvisa('Revisione registrata per ' + m.nome);
+              vistaScadenze();
+            }).catch(function (err) { tr.querySelector('.errore').textContent = err.message; });
+          };
+          f.elements.officina_revisione.focus();
+        };
+      });
     }).catch(errorePagina);
   }
 
@@ -1067,6 +1454,7 @@
       case 'carico': return haFunzione('carico') ? vistaCarico() : vistaHome();
       case 'viaggi': return haFunzione('viaggi') ? vistaViaggi(parti[1] ? Number(parti[1]) : null) : vistaHome();
       case 'mezzi': return vistaMezzi();
+      case 'scadenze': return haFunzione('scadenze') ? vistaScadenze() : vistaHome();
       case 'piani': return !haFunzione('carico') ? vistaHome() : (parti[1] ? vistaPiano(Number(parti[1])) : vistaPiani());
       case 'utenti': return stato.utente.ruolo === 'admin' ? vistaUtenti() : vistaHome();
       case 'account': return vistaAccount();

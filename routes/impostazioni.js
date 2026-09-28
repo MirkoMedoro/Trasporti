@@ -55,4 +55,30 @@ r.put('/tassato', richiediRuolo('admin'), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Impostazioni di "Ottimizza giro": deposito di partenza e abitudini
+r.get('/giri', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT impostazioni FROM aziende WHERE id=$1', [req.utente.azienda_id]);
+    res.json((rows[0] && rows[0].impostazioni && rows[0].impostazioni.giri) || null);
+  } catch (e) { next(e); }
+});
+
+r.put('/giri', richiediRuolo('admin'), async (req, res, next) => {
+  try {
+    const b = req.body || {}, d = b.deposito || {};
+    const g = {
+      deposito: Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lon)) && d.nome
+        ? { nome: String(d.nome).slice(0, 200), lat: Number(d.lat), lon: Number(d.lon) } : null,
+      rientro: b.rientro !== false,
+      consegnePrima: !!b.consegnePrima,
+      sosta: Math.min(240, Math.max(0, Number(b.sosta) || 0)),
+      partenza: /^\d{2}:\d{2}$/.test(String(b.partenza)) ? b.partenza : '07:30',
+    };
+    await pool.query(
+      "UPDATE aziende SET impostazioni = jsonb_set(impostazioni, '{giri}', $1::jsonb, true) WHERE id=$2",
+      [JSON.stringify(g), req.utente.azienda_id]);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 module.exports = r;

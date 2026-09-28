@@ -4,9 +4,16 @@
 // Senza chiave usa servizi pubblici gratuiti (Nominatim + OSRM, profilo auto): vanno bene per le prove.
 const express = require('express');
 const { richiediLogin, richiediAzienda, richiediFunzione } = require('../auth');
+const { registra } = require('../attivita');
 
 const r = express.Router();
-r.use(richiediLogin, richiediAzienda, richiediFunzione('viaggi'));
+// Servono sia a "Viaggi e costi" sia a "Ottimizza giro"
+r.use(richiediLogin, richiediAzienda, (req, res, next) => {
+  const f = req.utente.funzioni || {};
+  if (f.viaggi === false && f.giri === false) return res.status(403).json({ errore: 'Questa funzione non è inclusa nel tuo piano.' });
+  next();
+});
+const MAX_PUNTI = 50;
 
 const ORS = () => process.env.ORS_API_KEY;
 const AGENTE = 'Stiva-gestionale-trasporti/1.0';
@@ -52,7 +59,9 @@ r.get('/stato', (req, res) => {
 r.get('/cerca', async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 200);
   if (q.length < 3) return res.json([]);
-  const chiave = (ORS() ? 'o:' : 'n:') + q.toLowerCase();
+  // paese=it limita la ricerca all'Italia (usato da Ottimizza giro: le distinte spesso non hanno il CAP)
+  const paese = /^[a-z]{2}$/i.test(String(req.query.paese || '')) ? String(req.query.paese).toLowerCase() : '';
+  const chiave = (ORS() ? 'o:' : 'n:') + paese + ':' + q.toLowerCase();
   if (memoria.has(chiave)) return res.json(memoria.get(chiave));
   try {
     let risultati;
@@ -62,6 +71,7 @@ r.get('/cerca', async (req, res) => {
       u.searchParams.set('text', q);
       u.searchParams.set('size', '6');
       u.searchParams.set('lang', 'it');
+      if (paese) u.searchParams.set('boundary.country', paese.toUpperCase());
       const d = await chiedi(u);
       risultati = (d.features || []).map((f) => ({
         nome: f.properties.label, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
@@ -73,6 +83,7 @@ r.get('/cerca', async (req, res) => {
       u.searchParams.set('q', q);
       u.searchParams.set('limit', '6');
       u.searchParams.set('accept-language', 'it');
+      if (paese) u.searchParams.set('countrycodes', paese);
       const d = await chiedi(u, { headers: { 'User-Agent': AGENTE } });
       risultati = (d || []).map((x) => ({ nome: x.display_name, lat: Number(x.lat), lon: Number(x.lon) }));
     }
@@ -111,7 +122,7 @@ r.post('/calcola', async (req, res) => {
   const punti = Array.isArray(req.body.punti) ? req.body.punti : [];
   const coord = punti.map((p) => [Number(p.lon), Number(p.lat)]);
   if (coord.length < 2) return res.status(400).json({ errore: 'Servono almeno partenza e arrivo.' });
-  if (coord.length > 25) return res.status(400).json({ errore: 'Massimo 25 tappe per viaggio.' });
+  if (coord.length > MAX_PUNTI) return res.status(400).json({ errore: `Massimo ${MAX_PUNTI} tappe per percorso.` });
   if (coord.some((c) => !Number.isFinite(c[0]) || !Number.isFinite(c[1]))) {
     return res.status(400).json({ errore: 'Una delle tappe non ha una posizione valida: selezionala dall’elenco dei risultati.' });
   }
@@ -144,6 +155,7 @@ r.post('/calcola', async (req, res) => {
       linea = rt.geometry.coordinates;
       fonte = 'auto';
     }
+    registra(req, req.utente, 'viaggio_percorso');
     res.json({
       km: Math.round(km * 10) / 10,
       minuti: Math.round(minuti),
@@ -157,6 +169,39 @@ r.post('/calcola', async (req, res) => {
       ? 'Una delle tappe non è raggiungibile su strada: controlla gli indirizzi.'
       : 'Calcolo del percorso non disponibile in questo momento. Riprova tra poco.';
     res.status(502).json({ errore: msg });
+  }
+});
+
+// Distanze e tempi stradali tra tutti i punti (per ottimizzare l'ordine delle tappe)
+r.post('/matrice', async (req, res) => {
+  const punti = Array.isArray(req.body.punti) ? req.body.punti : [];
+  const coord = punti.map((p) => [Number(p.lon), Number(p.lat)]);
+  if (coord.length < 2) return res.status(400).json({ errore: 'Servono almeno due punti.' });
+  if (coord.length > MAX_PUNTI) return res.status(400).json({ errore: `Massimo ${MAX_PUNTI - 1} tappe per giro.` });
+  if (coord.some((c) => !Number.isFinite(c[0]) || !Number.isFinite(c[1]))) return res.status(400).json({ errore: 'Un punto non ha una posizione valida.' });
+  try {
+    let km, minuti, fonte;
+    if (ORS()) {
+      const corpo = { locations: coord, metrics: ['distance', 'duration'], units: 'km' };
+      const d = await chiedi('https://api.openrouteservice.org/v2/matrix/driving-hgv', {
+        method: 'POST', headers: { Authorization: ORS(), 'Content-Type': 'application/json' }, body: JSON.stringify(corpo),
+      });
+      km = d.distances; minuti = d.durations.map((r2) => r2.map((s) => (s == null ? null : s / 60))); fonte = 'camion';
+    } else {
+      const u = 'https://router.project-osrm.org/table/v1/driving/' + coord.map((c) => c[0] + ',' + c[1]).join(';') + '?annotations=distance,duration';
+      const d = await chiedi(u, { headers: { 'User-Agent': AGENTE } });
+      if (d.code && d.code !== 'Ok') throw new Error(d.message || d.code);
+      km = d.distances.map((r2) => r2.map((m) => (m == null ? null : m / 1000)));
+      minuti = d.durations.map((r2) => r2.map((s) => (s == null ? null : s / 60))); fonte = 'auto';
+    }
+    // Un punto non raggiungibile su strada rende inutilizzabile il calcolo: lo segnaliamo
+    const irraggiungibili = [];
+    km.forEach((riga, i) => { if (riga.some((v, j) => v == null && i !== j) && !irraggiungibili.includes(i)) irraggiungibili.push(i); });
+    if (irraggiungibili.length) return res.status(422).json({ errore: 'Alcune tappe non sono raggiungibili su strada: controlla gli indirizzi.', irraggiungibili });
+    res.json({ km, minuti, fonte });
+  } catch (e) {
+    console.error('Matrice distanze:', e.message);
+    res.status(502).json({ errore: 'Calcolo delle distanze non disponibile in questo momento. Riprova tra poco.' });
   }
 });
 

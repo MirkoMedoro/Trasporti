@@ -14,12 +14,18 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const { inizializza } = require('./db');
+const { pulisci } = require('./attivita');
 
 const app = express();
 app.set('trust proxy', 1);
 // Il ripristino del backup accetta file grandi: ha un suo lettore dedicato
 const leggiJson = express.json({ limit: '5mb' });
-app.use((req, res, next) => (req.path === '/api/backup/ripristina' ? next() : leggiJson(req, res, next)));
+const leggiDocumenti = express.json({ limit: '30mb' });
+app.use((req, res, next) => {
+  if (req.path === '/api/backup/ripristina') return next();
+  if (req.path === '/api/giri/leggi') return leggiDocumenti(req, res, next);
+  return leggiJson(req, res, next);
+});
 app.use(cookieParser());
 
 app.use('/api', require('./routes/accesso'));
@@ -33,6 +39,9 @@ app.use('/api/percorsi', require('./routes/percorsi'));
 app.use('/api/viaggi', require('./routes/viaggi'));
 app.use('/api/impostazioni', require('./routes/impostazioni'));
 app.use('/api/backup', require('./routes/backup'));
+app.use('/api/attivita', require('./routes/attivita'));
+app.use('/api/statistiche', require('./routes/statistiche'));
+app.use('/api/giri', require('./routes/giri'));
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
@@ -45,5 +54,10 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 inizializza()
-  .then(() => app.listen(PORT, () => console.log(`Stiva avviato sulla porta ${PORT}`)))
+  .then(() => {
+    // Il registro delle attività si svuota da solo dei dati troppo vecchi
+    pulisci();
+    setInterval(pulisci, 24 * 60 * 60 * 1000);
+    app.listen(PORT, () => console.log(`Stiva avviato sulla porta ${PORT}`));
+  })
   .catch((e) => { console.error('Impossibile preparare il database:', e); process.exit(1); });

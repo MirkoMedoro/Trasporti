@@ -3,6 +3,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { richiediLogin, richiediAzienda } = require('../auth');
 const { intero, testo } = require('../validazione');
+const { registra } = require('../attivita');
 
 const r = express.Router();
 r.use(richiediLogin, richiediAzienda);
@@ -72,6 +73,7 @@ r.post('/', async (req, res, next) => {
     const { rows } = await pool.query(
       `INSERT INTO mezzi (azienda_id,${COLONNE}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
       [req.utente.azienda_id, ...valori(m)]);
+    registra(req, req.utente, 'mezzo_aggiunto');
     res.json({ ok: true, id: rows[0].id });
   } catch (e) { next(e); }
 });
@@ -107,6 +109,7 @@ r.patch('/:id/revisione', async (req, res, next) => {
       "UPDATE mezzi SET ultima_revisione=$1, scadenza_revisione=$2, officina_revisione=$3 WHERE id=$4 AND azienda_id=$5 AND proprieta='proprio'",
       [fatta, scad, testo(req.body.officina_revisione, 150) || null, Number(req.params.id), req.utente.azienda_id]);
     if (!rowCount) return res.status(404).json({ errore: 'Mezzo non trovato.' });
+    registra(req, req.utente, 'revisione_registrata');
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

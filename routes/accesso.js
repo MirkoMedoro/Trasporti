@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { pool } = require('../db');
 const { creaSessione, chiudiSessione, richiediLogin } = require('../auth');
 const { testo, emailValida } = require('../validazione');
+const { registra } = require('../attivita');
 
 const r = express.Router();
 
@@ -50,6 +51,7 @@ r.post('/login', async (req, res, next) => {
       return res.status(403).json({ errore: "L'account della tua azienda è sospeso. Contatta l'assistenza." });
     }
     creaSessione(res, u);
+    registra(req, u, 'accesso');
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

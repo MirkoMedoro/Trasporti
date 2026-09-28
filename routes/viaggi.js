@@ -3,6 +3,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { richiediLogin, richiediAzienda, richiediFunzione } = require('../auth');
 const { testo } = require('../validazione');
+const { registra } = require('../attivita');
 
 const r = express.Router();
 r.use(richiediLogin, richiediAzienda, richiediFunzione('viaggi'));
@@ -33,6 +34,7 @@ r.post('/', async (req, res, next) => {
     const { rows } = await pool.query(
       'INSERT INTO viaggi (azienda_id, nome, dati, creato_da) VALUES ($1,$2,$3,$4) RETURNING id',
       [req.utente.azienda_id, nome, JSON.stringify(req.body.dati), req.utente.id]);
+    registra(req, req.utente, 'viaggio_salvato');
     res.json({ ok: true, id: rows[0].id });
   } catch (e) { next(e); }
 });

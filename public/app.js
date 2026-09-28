@@ -22,6 +22,8 @@
     backup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6M4.5 11.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg>',
     tassato: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 8h10l2.5 12h-15z"/><path d="M9.5 8a2.5 2.5 0 0 1 5 0"/><path d="M9 14h6M12 11.5v5"/></svg>',
     strumenti: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.5 5.5a4 4 0 0 0 5 5L12 18a2.1 2.1 0 0 1-3-3z"/><path d="M14.5 5.5 17 3l1 3 3 1-2.5 2.5"/><path d="M4 20l3-3"/></svg>',
+    statistiche: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V4M4 20h16"/><path d="M8 16v-4M12 16V8M16 16v-6M20 16v-9"/></svg>',
+    giri: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M17.8 7.6l-4.6 8.8M6.2 7.6l4.6 8.8"/></svg>',
     account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.2-7 8-7s7 2.5 8 7"/></svg>'
   };
 
@@ -79,6 +81,14 @@
     stato.viste3d = [];
     if (stato.mappa) { stato.mappa.remove(); stato.mappa = null; }
   }
+  // Segnala al server l'uso di una funzione (solo per le statistiche del super amministratore)
+  function traccia(evento) {
+    if (!stato.utente || stato.utente.ruolo === 'superadmin') return;
+    try {
+      fetch('/api/attivita', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evento: evento }), credentials: 'same-origin', keepalive: true })
+        .catch(function () {});
+    } catch (e) { /* le statistiche non devono mai bloccare il lavoro */ }
+  }
   function haFunzione(id) { return !stato.utente || !stato.utente.funzioni || stato.utente.funzioni[id] !== false; }
 
   // ---------- accesso ----------
@@ -121,12 +131,12 @@
           '<label class="campo">Il tuo nome<input type="text" name="nome" autocomplete="name" required></label>' +
           '<label class="campo">Email<input type="email" name="email" autocomplete="email" required></label>' +
           '<label class="campo">Password (almeno 8 caratteri)<input type="password" name="password" autocomplete="new-password" required></label>',
-          'Crea account', function (v) { return api('POST', '/api/setup', v).then(avvia); });
+          'Crea account', function (v) { return api('POST', '/api/setup', v).then(function () { return avvia(true); }); });
       } else {
         paginaAccesso('Accedi', 'Inserisci le credenziali ricevute dalla tua azienda.',
           '<label class="campo">Email<input type="email" name="email" autocomplete="username" required></label>' +
           '<label class="campo">Password<input type="password" name="password" autocomplete="current-password" required></label>',
-          'Accedi', function (v) { return api('POST', '/api/login', v).then(avvia); });
+          'Accedi', function (v) { return api('POST', '/api/login', v).then(function () { return avvia(true); }); });
       }
     }).catch(function () {
       app.innerHTML = '<div class="contenuto"><p class="errore">Il server non risponde. Riprova tra qualche istante.</p></div>';
@@ -136,11 +146,12 @@
   // ---------- struttura con menu ----------
   function vociMenu() {
     var r = stato.utente.ruolo;
-    if (r === 'superadmin') return [['aziende', 'Aziende clienti'], ['backup', 'Backup'], ['account', 'Il mio account']];
+    if (r === 'superadmin') return [['aziende', 'Aziende clienti'], ['statistiche', 'Statistiche'], ['backup', 'Backup'], ['account', 'Il mio account']];
     var v = [['home', 'Home']];
     var strumenti = [];
     if (haFunzione('carico')) strumenti.push(['carico', 'Piano di carico']);
     if (haFunzione('tassato')) strumenti.push(['tassato', 'Calcolatore']);
+    if (haFunzione('giri')) strumenti.push(['giri', 'Ottimizza giro']);
     if (strumenti.length) v.push({ gruppo: 'strumenti', nome: 'Strumenti', voci: strumenti });
     if (haFunzione('viaggi')) v.push(['viaggi', 'Viaggi e costi']);
     v.push(['mezzi', 'Mezzi']);
@@ -195,6 +206,7 @@
   function vistaHome() {
     var tessere = [];
     if (haFunzione('carico')) tessere.push(['carico', 'Piano di carico', 'Inserisci i colli e ottieni la disposizione migliore.']);
+    if (haFunzione('giri')) tessere.push(['giri', 'Ottimizza giro', 'Carica la distinta di ritiri e consegne e trova l’ordine con meno km.']);
     if (haFunzione('tassato')) tessere.push(['tassato', 'Calcolatore', 'Calcolo del volume reale, del peso tassato e del prezzo di una spedizione.']);
     if (haFunzione('viaggi')) tessere.push(['viaggi', 'Viaggi e costi', 'Km del percorso, costo del viaggio e prezzo di pareggio.']);
     tessere.push(['mezzi', 'Mezzi', 'La flotta con misure, portata, revisione e complessi veicolari.']);
@@ -659,6 +671,7 @@
             var u = unitaScelta();
             var esito = pianificaUnita(u.scomparti, righe);
             p.risultato = esito;
+            traccia('carico_calcolo');
             mostraRisultato(main.querySelector('#risultato'), u.nome, righe, esito, true);
             main.querySelector('#risultato').scrollIntoView({ behavior: 'smooth', block: 'start' });
           } catch (ex) { main.querySelector('#err').textContent = ex.message; }
@@ -672,6 +685,7 @@
         var automatico = !!stato.piano.automatico;
         stato.piano.automatico = false;
         var righe = controllaRighe(); if (!righe) return;
+        traccia('carico_quale_mezzo');
         var btn = this, box = main.querySelector('#consiglio');
         btn.disabled = true; btn.textContent = 'Provo tutti i mezzi…';
         var ordinate = unita.slice().sort(function (a, b) { return (a.volume - b.volume) || (a.portata - b.portata); });
@@ -1001,6 +1015,14 @@
       if (aperto) {
         var d = aperto.dati;
         stato.viaggio = { mezzoId: null, mezzo: d.mezzo || null, tappe: d.tappe, ritorno: !!d.ritorno, costi: d.costi, percorso: d.percorso, nome: aperto.nome };
+      }
+      if (stato.viaggioDaGiro) {
+        var dg = stato.viaggioDaGiro;
+        stato.viaggioDaGiro = null;
+        stato.viaggio = nuovoViaggio(mezzi);
+        stato.viaggio.tappe = dg.tappe;
+        stato.viaggio.ritorno = dg.ritorno;
+        if (dg.mezzoId) stato.viaggio.mezzoId = dg.mezzoId;
       }
       if (!stato.viaggio) stato.viaggio = nuovoViaggio(mezzi);
       var v = stato.viaggio;
@@ -1432,7 +1454,7 @@
         '<p class="errore" id="t-err"></p>');
 
       var tbody = main.querySelector('#t-righe');
-      var ultimo = null, timerLdm = null, ldm = null;
+      var ultimo = null, timerLdm = null, ldm = null, calcoloSegnalato = false;
 
       function disegnaRighe() {
         main.querySelector('#t-intest-peso').textContent = t.modoPeso === 'totale' ? 'Peso riga kg' : 'Peso collo kg';
@@ -1456,6 +1478,7 @@
       function aggiorna() {
         var c = calcolaTassato(t);
         ultimo = c;
+        if (!calcoloSegnalato && c.righe.some(function (x) { return x.completa; })) { calcoloSegnalato = true; traccia('calcolatore_calcolo'); }
         // valori per riga
         Array.prototype.forEach.call(tbody.children, function (tr, i) {
           var x = c.righe[i];
@@ -1604,6 +1627,7 @@
           (t.modoTariffa !== 'ldm' && c.passo && c.arrotondato !== c.tassato ? 'Peso tassato arrotondato: ' + num(c.arrotondato) + ' kg (ai ' + num(c.passo) + ' kg superiori)\n' : '') +
           (ldm && ldm.metri != null ? 'Metri lineari: ' + num(ldm.metri, 2) + ' m\n' : '') +
           (t.prezzo ? 'Prezzo: ' + euro(t.prezzo) + ' + IVA\n' : '');
+        traccia('calcolatore_copia');
         var fatto = function () { avvisa('Riepilogo copiato: incollalo dove vuoi'); };
         if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(testo).then(fatto, function () { mostraTesto(testo); });
         else mostraTesto(testo);
@@ -1623,11 +1647,376 @@
         stato.piano.righe = righe;
         stato.piano.risultato = null;
         stato.piano.automatico = true;
+        traccia('calcolatore_carico');
         location.hash = '#/carico';
       };
 
       disegnaRighe();
     });
+  }
+
+  // ---------- Ottimizza giro (ritiri e consegne) ----------
+  var pdfJsPronto = null;
+  function caricaPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (!pdfJsPronto) {
+      pdfJsPronto = new Promise(function (ok, ko) {
+        var s = document.createElement('script');
+        s.src = '/lib/pdf.min.js';
+        s.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/lib/pdf.worker.min.js'; ok(window.pdfjsLib); };
+        s.onerror = function () { pdfJsPronto = null; ko(new Error('Impossibile caricare il lettore PDF.')); };
+        document.head.appendChild(s);
+      });
+    }
+    return pdfJsPronto;
+  }
+  function leggiFile(file, comeTesto) {
+    return new Promise(function (ok, ko) {
+      var r = new FileReader();
+      r.onload = function () { ok(r.result); };
+      r.onerror = function () { ko(new Error('Impossibile leggere il file.')); };
+      if (comeTesto) r.readAsDataURL(file); else r.readAsArrayBuffer(file);
+    });
+  }
+  function oraPiu(hhmm, minuti) {
+    var p = String(hhmm || '07:30').split(':'), t = Number(p[0]) * 60 + Number(p[1]) + Math.round(minuti);
+    return due(Math.floor(t / 60) % 24) + ':' + due(t % 60) + (t >= 1440 ? ' (+1 g)' : '');
+  }
+  function nuovaTappa(t) {
+    return Object.assign({ tipo: '', nome: '', indirizzo: '', colli: '', peso: '', note: '', urgente: false, lat: null, lon: null, trovato: '' }, t || {});
+  }
+  // Cerca un indirizzo; se non lo trova prova con CAP e località (posizione approssimata)
+  function trovaIndirizzo(testo) {
+    return api('GET', '/api/percorsi/cerca?paese=it&q=' + encodeURIComponent(testo)).then(function (r) {
+      if (r.length) return { lat: r[0].lat, lon: r[0].lon, nome: r[0].nome, trovato: 'si' };
+      var m = String(testo).match(/\b\d{5}\b[^,]*/);
+      var comune = m ? m[0] : String(testo).split(',').slice(-1)[0];
+      if (!comune || comune.trim() === String(testo).trim()) return null;
+      return api('GET', '/api/percorsi/cerca?paese=it&q=' + encodeURIComponent(comune.trim())).then(function (r2) {
+        return r2.length ? { lat: r2[0].lat, lon: r2[0].lon, nome: r2[0].nome, trovato: 'comune' } : null;
+      });
+    });
+  }
+  function linkNavigatore(punti) {
+    // Google Maps accetta un numero limitato di tappe per link: il giro viene diviso in parti
+    var parti = [], passo = 9;
+    for (var i = 0; i < punti.length - 1; i += passo) {
+      var pezzo = punti.slice(i, Math.min(punti.length, i + passo + 1));
+      var u = 'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=' + pezzo[0].lat + ',' + pezzo[0].lon +
+        '&destination=' + pezzo[pezzo.length - 1].lat + ',' + pezzo[pezzo.length - 1].lon;
+      if (pezzo.length > 2) u += '&waypoints=' + pezzo.slice(1, -1).map(function (p) { return p.lat + ',' + p.lon; }).join('%7C');
+      parti.push({ url: u, da: i, a: i + pezzo.length - 1 });
+    }
+    return parti;
+  }
+
+  function vistaGiri() {
+    Promise.all([
+      caricaMezzi(),
+      api('GET', '/api/impostazioni/giri').catch(function () { return null; }),
+      api('GET', '/api/impostazioni/costi').catch(function () { return null; }),
+      api('GET', '/api/giri/stato').catch(function () { return { ai: false }; })
+    ]).then(function (r) {
+      var mezzi = r[0].filter(function (m) { return !m.categoria || (CATEGORIE[m.categoria] && CATEGORIE[m.categoria].motore); });
+      var imp = r[1] || {}, costi = r[2] || {}, servizio = r[3];
+      var admin = stato.utente.ruolo === 'admin';
+      if (!stato.giro) {
+        stato.giro = {
+          tappe: [], deposito: imp.deposito || null, depositoTesto: imp.deposito ? imp.deposito.nome : '',
+          rientro: imp.rientro !== false, consegnePrima: !!imp.consegnePrima, sosta: imp.sosta != null ? imp.sosta : 15,
+          partenza: imp.partenza || '07:30', mezzoId: mezzi[0] ? mezzi[0].id : null,
+          gasolio: costi.gasolio || 1.65, risultato: null, testo: ''
+        };
+      }
+      var g = stato.giro;
+      function mezzoScelto() { return mezzi.filter(function (m) { return m.id === g.mezzoId; })[0] || null; }
+
+      var main = guscio('giri',
+        '<div class="testata"><div><h1>Ottimizza giro</h1><p>Carica la distinta di ritiri e consegne dell’autista: il programma trova l’ordine delle tappe con meno km, e quindi meno gasolio.</p></div>' +
+        '<div class="riga-azioni no-stampa"><button class="btn" id="giro-nuovo">Nuovo giro</button></div></div>' +
+        '<section class="pannello no-stampa"><h2>1. Carica la distinta</h2>' +
+          '<div class="carica-distinta">' +
+            '<div><label class="btn btn-scuro" style="cursor:pointer">Scegli PDF' + (servizio.ai ? ' o foto' : '') + '<input type="file" id="giro-file" accept="application/pdf' + (servizio.ai ? ',image/jpeg,image/png,image/webp' : '') + '" hidden></label>' +
+              (servizio.ai ? '<label class="spunta" style="margin-top:10px"><input type="checkbox" id="giro-ai" checked> Lettura intelligente (legge anche scansioni e foto)</label>' : '<p class="nota" style="margin-top:8px">Legge i PDF con testo (quelli creati da un programma). Per scansioni e foto serve la lettura intelligente.</p>') +
+            '</div>' +
+            '<div class="oppure">oppure</div>' +
+            '<div><label class="campo">Scrivi o incolla le tappe, una per riga<textarea id="giro-testo" rows="4" placeholder="Consegna Rossi Srl, Via Roma 12, 52100 Arezzo&#10;Ritiro Bianchi, Via Senese 45, 53100 Siena">' + esc(g.testo) + '</textarea></label>' +
+              '<button class="btn btn-piccolo" id="giro-leggi-testo" style="margin-top:8px">Leggi il testo</button></div>' +
+          '</div>' +
+          '<p class="nota" id="giro-stato-lettura" style="margin-top:12px"></p>' +
+        '</section>' +
+        '<section class="pannello no-stampa" id="giro-sez-tappe"></section>' +
+        '<section class="pannello no-stampa"><h2>3. Impostazioni del giro</h2><div class="griglia-form" style="margin-top:14px">' +
+          '<label class="campo" style="grid-column:span 2">Partenza (deposito)<input type="text" id="giro-deposito" value="' + esc(g.depositoTesto) + '" placeholder="Indirizzo del deposito, premi Invio per cercarlo"><span class="nota-campo" id="giro-deposito-trovato">' + (g.deposito ? '✓ ' + esc(g.deposito.nome) : '') + '</span></label>' +
+          '<fieldset class="campo scelta-ordine"><legend>Come deve girare l\'autista?</legend>' +
+            '<label><input type="radio" name="giro-ordine" value="libero"' + (!g.consegnePrima ? ' checked' : '') + '> <b>Tutto insieme</b>: consegne e ritiri mescolati, meno km possibili</label>' +
+            '<label><input type="radio" name="giro-ordine" value="consegne"' + (g.consegnePrima ? ' checked' : '') + '> <b>Prima tutte le consegne</b>, poi i ritiri (il camion si svuota prima di ricaricare)</label>' +
+          '</fieldset>' +
+          '<label class="campo">Mezzo<select id="giro-mezzo"><option value="">Nessuno in particolare</option>' + mezzi.map(function (m) { return '<option value="' + m.id + '"' + (m.id === g.mezzoId ? ' selected' : '') + '>' + esc(nomeMezzo(m)) + '</option>'; }).join('') + '</select></label>' +
+          '<label class="campo">Ora di partenza<input type="time" id="giro-partenza" value="' + esc(g.partenza) + '"></label>' +
+          '<label class="campo">Sosta media per tappa (minuti)<input type="number" min="0" step="5" id="giro-sosta" value="' + esc(g.sosta) + '"></label>' +
+          '<label class="campo">Gasolio (€/litro)<input type="number" min="0" step="0.01" id="giro-gasolio" value="' + esc(g.gasolio) + '"></label>' +
+        '</div>' +
+        '<label class="spunta" style="margin-top:14px"><input type="checkbox" id="giro-rientro"' + (g.rientro ? ' checked' : '') + '> Rientro al deposito a fine giro</label>' +
+        (admin ? '<button class="btn btn-piccolo" id="giro-predefiniti" style="margin-top:14px">Usa questi valori come predefiniti</button>' : '') +
+        '<div class="barra-calcolo"><p class="nota">Le tappe segnate “Urgente” vengono fatte per prime.</p><button class="btn btn-primario" id="giro-ottimizza">Ottimizza il giro</button></div>' +
+        '<p class="errore" id="giro-err"></p><p class="nota" id="giro-avanzamento"></p>' +
+        '</section>' +
+        '<div id="giro-risultato"></div>');
+
+      // --- tappe ---
+      var sez = main.querySelector('#giro-sez-tappe');
+      function disegnaTappe() {
+        var n = g.tappe.length;
+        sez.innerHTML = '<div class="testa-grafico"><div><h2>2. Tappe' + (n ? ' (' + n + ')' : '') + '</h2><p class="nota">Controlla tipo e indirizzi: puoi correggere, aggiungere o togliere tappe. L’ordine qui è quello della distinta.</p></div></div>' +
+          (n ? '<div class="tabella-scroll"><table class="tab-colli tab-giro"><thead><tr><th>N.</th><th>Tipo</th><th>Cliente</th><th>Indirizzo</th><th class="num">Colli</th><th class="num">Peso</th><th>Note</th><th title="Da fare per prima">Urgente</th><th>Posizione</th><th></th></tr></thead><tbody>' +
+            g.tappe.map(function (t, i) {
+              var pos = t.trovato === 'si' ? '<span class="pos ok" title="' + esc(t.trovatoNome || '') + '">✓ trovata</span>'
+                : t.trovato === 'comune' ? '<span class="pos approx" title="Trovato solo il comune: posizione approssimata">≈ solo comune</span>'
+                : t.trovato === 'no' ? '<span class="pos no">✗ non trovata</span>' : '<span class="nota">da cercare</span>';
+              return '<tr data-i="' + i + '"><td class="num">' + (i + 1) + '</td>' +
+                '<td><select data-k="tipo"><option value=""' + (!t.tipo ? ' selected' : '') + '>–</option><option value="consegna"' + (t.tipo === 'consegna' ? ' selected' : '') + '>Consegna</option><option value="ritiro"' + (t.tipo === 'ritiro' ? ' selected' : '') + '>Ritiro</option></select></td>' +
+                '<td><input type="text" data-k="nome" value="' + esc(t.nome) + '"></td>' +
+                '<td><input type="text" data-k="indirizzo" class="campo-indirizzo" value="' + esc(t.indirizzo) + '"></td>' +
+                '<td class="num"><input type="number" min="0" data-k="colli" value="' + esc(t.colli) + '"></td>' +
+                '<td class="num"><input type="number" min="0" data-k="peso" value="' + esc(t.peso) + '"></td>' +
+                '<td><input type="text" data-k="note" value="' + esc(t.note) + '"></td>' +
+                '<td class="centro"><input type="checkbox" data-k="urgente"' + (t.urgente ? ' checked' : '') + '></td>' +
+                '<td>' + pos + '</td><td><button class="btn-testo pericolo" data-togli="' + i + '">Togli</button></td></tr>';
+            }).join('') + '</tbody></table></div>' : '<div class="esito-vuoto">Nessuna tappa: carica la distinta o scrivi le tappe qui sopra.</div>') +
+          '<div class="aggiungi-colli"><button class="btn btn-piccolo" id="giro-aggiungi">Aggiungi tappa</button></div>';
+        sez.querySelector('#giro-aggiungi').onclick = function () { g.tappe.push(nuovaTappa()); disegnaTappe(); sez.querySelector('tbody tr:last-child [data-k=nome]').focus(); };
+      }
+      sez.addEventListener('input', function (e) {
+        var k = e.target.dataset.k; if (!k) return;
+        var t = g.tappe[Number(e.target.closest('tr').dataset.i)];
+        t[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+        if (k === 'indirizzo') { t.lat = t.lon = null; t.trovato = ''; }
+        g.risultato = null;
+      });
+      sez.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-togli]'); if (!b) return;
+        g.tappe.splice(Number(b.dataset.togli), 1); g.risultato = null; disegnaTappe(); mostraRisultato();
+      });
+
+      // --- lettura della distinta ---
+      var statoLettura = main.querySelector('#giro-stato-lettura');
+      function caricaTappe(tappe, fonte, deposito) {
+        if (!tappe.length) {
+          statoLettura.innerHTML = '<span class="errore">Non ho riconosciuto nessuna tappa. ' + (fonte === 'pdf' ? (servizio.ai ? 'Prova con la lettura intelligente, o ' : '') + 'scrivi le tappe nel riquadro a destra.' : 'Scrivi una tappa per riga con via, CAP e località.') + '</span>';
+          return;
+        }
+        g.tappe = tappe.map(nuovaTappa); g.risultato = null;
+        if (deposito && !g.deposito && !g.depositoTesto) { g.depositoTesto = deposito; main.querySelector('#giro-deposito').value = deposito; }
+        var senzaTipo = g.tappe.filter(function (t) { return !t.tipo; }).length;
+        statoLettura.innerHTML = '✓ Lette <b>' + tappe.length + ' tappe</b>' + (senzaTipo ? ', ' + senzaTipo + ' senza tipo (ritiro o consegna): indicalo tu se serve' : '') + '. Controllale qui sotto.';
+        traccia('giro_letto');
+        disegnaTappe(); mostraRisultato();
+        sez.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      main.querySelector('#giro-file').onchange = function () {
+        var file = this.files[0]; this.value = '';
+        if (!file) return;
+        var ai = servizio.ai && main.querySelector('#giro-ai') && main.querySelector('#giro-ai').checked;
+        statoLettura.textContent = ai ? 'Lettura intelligente in corso, può richiedere fino a un minuto…' : 'Leggo il PDF…';
+        if (ai) {
+          leggiFile(file, true).then(function (url) {
+            return api('POST', '/api/giri/leggi', { tipo: file.type, dati: String(url).split(',')[1] });
+          }).then(function (r2) { caricaTappe(r2.tappe, 'pdf', r2.deposito); })
+            .catch(function (e) { statoLettura.innerHTML = '<span class="errore">' + esc(e.message) + '</span>'; });
+          return;
+        }
+        if (file.type !== 'application/pdf') { statoLettura.innerHTML = '<span class="errore">Senza la lettura intelligente posso leggere solo PDF.</span>'; return; }
+        Promise.all([caricaPdfJs(), leggiFile(file)]).then(function (x) {
+          return x[0].getDocument({ data: new Uint8Array(x[1]) }).promise;
+        }).then(function (pdf) { return window.Giro.righeDaPdf(pdf); }).then(function (righe) {
+          if (!righe.length) {
+            statoLettura.innerHTML = '<span class="errore">Il PDF non contiene testo: è probabilmente una scansione. ' + (servizio.ai ? 'Usa la lettura intelligente.' : 'Per leggerlo serve la lettura intelligente, oppure scrivi le tappe a mano.') + '</span>';
+            return;
+          }
+          caricaTappe(window.Giro.estraiTappe(righe).tappe, 'pdf');
+        }).catch(function (e) { statoLettura.innerHTML = '<span class="errore">Non riesco a leggere il PDF: ' + esc(e.message) + '</span>'; });
+      };
+      main.querySelector('#giro-testo').oninput = function () { g.testo = this.value; };
+      main.querySelector('#giro-leggi-testo').onclick = function () {
+        caricaTappe(window.Giro.estraiTappe(window.Giro.righeDaTesto(g.testo)).tappe, 'testo');
+      };
+
+      // --- impostazioni ---
+      var campoDep = main.querySelector('#giro-deposito'), depTrovato = main.querySelector('#giro-deposito-trovato');
+      function cercaDeposito() {
+        var q = campoDep.value.trim();
+        if (!q) return Promise.reject(new Error('Indica l’indirizzo del deposito di partenza.'));
+        depTrovato.textContent = 'Cerco…';
+        return trovaIndirizzo(q).then(function (x) {
+          if (!x) { depTrovato.textContent = '✗ indirizzo non trovato'; throw new Error('Non trovo l’indirizzo del deposito: controllalo.'); }
+          g.deposito = { nome: q, lat: x.lat, lon: x.lon }; g.depositoTesto = q;
+          depTrovato.textContent = '✓ ' + x.nome;
+          return g.deposito;
+        });
+      }
+      campoDep.oninput = function () { g.depositoTesto = this.value; g.deposito = null; depTrovato.textContent = ''; g.risultato = null; };
+      campoDep.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); cercaDeposito().catch(function (er) { main.querySelector('#giro-err').textContent = er.message; }); } };
+      main.querySelectorAll('[name=giro-ordine]').forEach(function (r) { r.onchange = function () { g.consegnePrima = this.value === 'consegne'; }; });
+      main.querySelector('#giro-mezzo').onchange = function () { g.mezzoId = this.value ? Number(this.value) : null; };
+      main.querySelector('#giro-partenza').onchange = function () { g.partenza = this.value; if (g.risultato) mostraRisultato(); };
+      main.querySelector('#giro-sosta').oninput = function () { g.sosta = this.value; if (g.risultato) mostraRisultato(); };
+      main.querySelector('#giro-gasolio').oninput = function () { g.gasolio = this.value; if (g.risultato) mostraRisultato(); };
+      main.querySelector('#giro-rientro').onchange = function () { g.rientro = this.checked; };
+      var pred = main.querySelector('#giro-predefiniti');
+      if (pred) pred.onclick = function () {
+        (g.deposito ? Promise.resolve(g.deposito) : (campoDep.value.trim() ? cercaDeposito() : Promise.resolve(null))).then(function () {
+          return api('PUT', '/api/impostazioni/giri', { deposito: g.deposito, rientro: g.rientro, consegnePrima: g.consegnePrima, sosta: numero(g.sosta), partenza: g.partenza });
+        }).then(function () { avvisa('Impostazioni del giro salvate per tutta l’azienda'); }).catch(function (e) { avvisa(e.message); });
+      };
+      main.querySelector('#giro-nuovo').onclick = function () { stato.giro = null; vistaGiri(); };
+
+      // --- ottimizzazione ---
+      var avanz = main.querySelector('#giro-avanzamento'), err = main.querySelector('#giro-err');
+      main.querySelector('#giro-ottimizza').onclick = function () {
+        var btn = this;
+        err.textContent = '';
+        g.tappe = g.tappe.filter(function (t) { return (t.indirizzo || '').trim(); });
+        if (g.tappe.length < 2) { err.textContent = 'Servono almeno due tappe con l’indirizzo.'; disegnaTappe(); return; }
+        if (g.tappe.length > 45) { err.textContent = 'Massimo 45 tappe per giro: dividi la distinta in due giri.'; return; }
+        btn.disabled = true;
+        var fatto = function () { btn.disabled = false; avanz.textContent = ''; };
+        (g.deposito ? Promise.resolve(g.deposito) : cercaDeposito()).then(function () {
+          // cerca gli indirizzi uno alla volta
+          var daCercare = g.tappe.filter(function (t) { return t.lat == null; }), k = 0;
+          return daCercare.reduce(function (catena, t) {
+            return catena.then(function () {
+              avanz.textContent = 'Cerco gli indirizzi sulla mappa: ' + (++k) + ' di ' + daCercare.length + '…';
+              return trovaIndirizzo(t.indirizzo).then(function (x) {
+                if (x) { t.lat = x.lat; t.lon = x.lon; t.trovato = x.trovato; t.trovatoNome = x.nome; } else t.trovato = 'no';
+              }).catch(function () { t.trovato = 'no'; });
+            });
+          }, Promise.resolve());
+        }).then(function () {
+          disegnaTappe();
+          var mancanti = g.tappe.filter(function (t) { return t.trovato === 'no'; });
+          if (mancanti.length) throw new Error('Non trovo ' + mancanti.length + (mancanti.length === 1 ? ' indirizzo' : ' indirizzi') + ' (segnati con ✗): correggili e riprova.');
+          avanz.textContent = 'Calcolo le distanze stradali tra le tappe…';
+          var punti = [g.deposito].concat(g.tappe).map(function (p) { return { lat: p.lat, lon: p.lon }; });
+          return api('POST', '/api/percorsi/matrice', { punti: punti });
+        }).then(function (mat) {
+          avanz.textContent = 'Cerco l’ordine migliore…';
+          var ris = window.Giro.ottimizzaGiro(mat.km, { tappe: g.tappe, rientro: g.rientro, consegnePrima: g.consegnePrima });
+          var seq = [0].concat(ris.ordine.map(function (i) { return i + 1; }));
+          if (g.rientro) seq.push(0);
+          var orig = [0]; g.tappe.forEach(function (t, i) { orig.push(i + 1); }); if (g.rientro) orig.push(0);
+          function minuti(s) { var m = 0; for (var i = 1; i < s.length; i++) m += mat.minuti[s[i - 1]][s[i]]; return m; }
+          g.risultato = {
+            ordine: ris.ordine, km: ris.km, kmOriginale: ris.kmOriginale, metodo: ris.metodo, fonte: mat.fonte,
+            tratte: seq.slice(1).map(function (b, i) { return { km: mat.km[seq[i]][b], minuti: mat.minuti[seq[i]][b] }; }),
+            minutiGuida: minuti(seq), minutiOriginale: minuti(orig),
+            rientro: g.rientro, consegnePrima: g.consegnePrima, linea: null
+          };
+          traccia('giro_ottimizzato');
+          mostraRisultato();
+          // linea del percorso sulla mappa (se non arriva, il risultato resta valido)
+          var m = mezzoScelto();
+          var puntiOrdinati = [g.deposito].concat(ris.ordine.map(function (i) { return g.tappe[i]; }));
+          if (g.rientro) puntiOrdinati.push(g.deposito);
+          return api('POST', '/api/percorsi/calcola', {
+            punti: puntiOrdinati.map(function (p) { return { lat: p.lat, lon: p.lon }; }),
+            mezzo: m ? { categoria: m.categoria, lunghezza: m.lunghezza, larghezza: m.larghezza, altezza: m.altezza } : null
+          }).then(function (p) { if (g.risultato) { g.risultato.linea = p.linea; disegnaMappaGiro(); } }).catch(function () {});
+        }).catch(function (e) { err.textContent = e.message; }).then(fatto);
+      };
+
+      // --- risultato ---
+      var mappaGiro = null;
+      function disegnaMappaGiro() {
+        var el = main.querySelector('#giro-mappa'), R = g.risultato;
+        if (!el || !window.L || !R) return;
+        if (stato.mappa) { stato.mappa.remove(); stato.mappa = null; }
+        mappaGiro = L.map(el); stato.mappa = mappaGiro;
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(mappaGiro);
+        var pts = [[g.deposito.lat, g.deposito.lon]];
+        L.marker(pts[0], { icon: L.divIcon({ className: 'pin-mappa pin-deposito', html: '<span>D</span>', iconSize: [30, 30], iconAnchor: [15, 15] }) }).bindTooltip('Deposito').addTo(mappaGiro);
+        R.ordine.forEach(function (idx, k) {
+          var t = g.tappe[idx]; pts.push([t.lat, t.lon]);
+          L.marker([t.lat, t.lon], { icon: L.divIcon({ className: 'pin-mappa' + (t.tipo === 'ritiro' ? ' pin-ritiro' : ''), html: '<span>' + (k + 1) + '</span>', iconSize: [30, 30], iconAnchor: [15, 15] }) })
+            .bindTooltip((k + 1) + '. ' + (t.tipo ? (t.tipo === 'ritiro' ? 'Ritiro' : 'Consegna') + ' – ' : '') + (t.nome || t.indirizzo)).addTo(mappaGiro);
+        });
+        var linea = R.linea || (R.rientro ? pts.concat([pts[0]]) : pts);
+        L.polyline(linea, { color: '#f5b800', weight: 8, opacity: 0.9 }).addTo(mappaGiro);
+        L.polyline(linea, { color: '#1b1f24', weight: 3, dashArray: R.linea ? null : '6 6' }).addTo(mappaGiro);
+        mappaGiro.fitBounds(L.latLngBounds(pts), { padding: [30, 30] });
+      }
+      function mostraRisultato() {
+        var box = main.querySelector('#giro-risultato'), R = g.risultato;
+        if (!R) { box.innerHTML = ''; if (stato.mappa) { stato.mappa.remove(); stato.mappa = null; } return; }
+        var m = mezzoScelto();
+        var consumo = m && m.consumo ? Number(m.consumo) : (numero(costi.consumo) || consumoTipico(m));
+        var gas = numero(g.gasolio) || 1.65, sosta = numero(g.sosta);
+        var fattore = R.fonte === 'auto' ? 1.2 : 1;   // i tempi del profilo auto vengono maggiorati per un camion
+        var kmRisp = Math.max(0, R.kmOriginale - R.km), litri = kmRisp * consumo / 100;
+        var tGuida = R.minutiGuida * fattore, tTot = tGuida + sosta * R.ordine.length;
+        var t = 0, righe = R.ordine.map(function (idx, k) {
+          var tp = g.tappe[idx], tr = R.tratte[k];
+          t += tr.minuti * fattore;
+          var arrivo = oraPiu(g.partenza, t);
+          t += sosta;
+          return '<tr><td class="num"><span class="ordine-num' + (tp.tipo === 'ritiro' ? ' ritiro' : '') + '">' + (k + 1) + '</span></td><td>' + arrivo + '</td>' +
+            '<td>' + (tp.tipo ? '<span class="etichetta tipo-' + tp.tipo + '">' + (tp.tipo === 'ritiro' ? 'Ritiro' : 'Consegna') + '</span>' : '') + (tp.urgente ? ' <span class="etichetta rev-vicina">Urgente</span>' : '') + '</td>' +
+            '<td><b>' + esc(tp.nome || '–') + '</b><div class="nota">' + esc(tp.indirizzo) + (tp.trovato === 'comune' ? ' <span class="pos approx">≈ posizione approssimata</span>' : '') + '</div></td>' +
+            '<td class="num">' + num(tr.km, 1) + ' km</td>' +
+            '<td class="num">' + (tp.colli !== '' ? num(tp.colli) + ' colli' : '') + (tp.peso !== '' ? '<div class="nota">' + num(tp.peso) + ' kg</div>' : '') + '</td>' +
+            '<td>' + esc(tp.note || '') + '</td><td class="num nota">n. ' + (idx + 1) + '</td></tr>';
+        }).join('');
+        var ultimo = R.tratte[R.tratte.length - 1];
+        var fine = R.rientro ? oraPiu(g.partenza, t + ultimo.minuti * fattore) : oraPiu(g.partenza, t - sosta);
+        var puntiNav = [g.deposito].concat(R.ordine.map(function (i) { return g.tappe[i]; }));
+        if (R.rientro) puntiNav.push(g.deposito);
+        var nav = linkNavigatore(puntiNav);
+        box.innerHTML =
+          '<div class="risultato"><div class="testata" style="margin-bottom:0"><div><h1>Giro ottimizzato</h1><p>' + R.ordine.length + ' tappe, partenza alle ' + esc(g.partenza) + ' da ' + esc(g.deposito.nome) + (R.consegnePrima ? '. Prima tutte le consegne, poi i ritiri' : '. Consegne e ritiri insieme') + '.</p></div>' +
+          '<div class="riga-azioni no-stampa"><button class="btn" id="giro-copia">Copia elenco</button><button class="btn" id="giro-stampa">Stampa</button></div></div>' +
+          '<div class="cruscotto cruscotto-viaggio">' +
+            '<div class="evidenza"><div class="valore">' + num(R.km, 0) + ' km</div><div class="desc">giro ottimizzato' + (R.rientro ? ', con rientro' : '') + '</div></div>' +
+            '<div><div class="valore">' + num(R.kmOriginale, 0) + ' km</div><div class="desc">nell’ordine della distinta</div></div>' +
+            '<div><div class="valore">' + num(kmRisp, 0) + ' km</div><div class="desc">risparmiati (' + (R.kmOriginale ? num(kmRisp / R.kmOriginale * 100, 0) : 0) + '%)</div></div>' +
+            '<div><div class="valore">' + euro(litri * gas) + '</div><div class="desc">di gasolio risparmiato (' + num(litri, 0) + ' litri a ' + num(consumo, 1) + ' l/100 km)</div></div>' +
+            '<div><div class="valore">' + durata(tTot / 60) + '</div><div class="desc">guida ' + durata(tGuida / 60) + ' + soste; ' + (R.rientro ? 'rientro' : 'fine') + ' alle ' + fine + '</div></div>' +
+          '</div>' +
+          (kmRisp < 0.5 ? '<div class="avviso giallo">L’ordine della distinta era già il migliore possibile.</div>' : '') +
+          '<div class="mappa" id="giro-mappa" style="height:420px;margin-bottom:18px"></div>' +
+          '<div class="pannello tabella-scroll"><h3 style="margin-bottom:10px">Ordine delle tappe</h3><table class="tab-ordine"><thead><tr><th class="num">Ordine</th><th>Arrivo</th><th>Tipo</th><th>Cliente e indirizzo</th><th class="num">Dalla prec.</th><th class="num">Merce</th><th>Note</th><th class="num">Distinta</th></tr></thead><tbody>' +
+            '<tr class="riga-deposito"><td class="num"><span class="ordine-num dep">D</span></td><td>' + esc(g.partenza) + '</td><td>Partenza</td><td><b>Deposito</b><div class="nota">' + esc(g.deposito.nome) + '</div></td><td></td><td></td><td></td><td></td></tr>' +
+            righe +
+            (R.rientro ? '<tr class="riga-deposito"><td class="num"><span class="ordine-num dep">D</span></td><td>' + fine + '</td><td>Rientro</td><td><b>Deposito</b></td><td class="num">' + num(ultimo.km, 1) + ' km</td><td></td><td></td><td></td></tr>' : '') +
+          '</tbody></table></div>' +
+          '<div class="pannello no-stampa"><h3>Navigatore</h3><p class="nota" style="margin:4px 0 12px">Apre il giro in Google Maps, sul telefono dell’autista o sul computer. Google accetta un numero limitato di tappe per volta, quindi i giri lunghi sono divisi in parti.</p><div class="riga-azioni">' +
+            nav.map(function (p, i) { return '<a class="btn' + (i === 0 ? ' btn-primario' : '') + '" target="_blank" rel="noopener" href="' + p.url + '">' + (nav.length > 1 ? 'Parte ' + (i + 1) + ': ' + (p.da === 0 ? 'deposito' : 'tappa ' + p.da) + ' → ' + (p.a === puntiNav.length - 1 && R.rientro ? 'deposito' : 'tappa ' + p.a) : 'Apri in Google Maps') + '</a>'; }).join('') +
+            (haFunzione('viaggi') ? '<button class="btn" id="giro-costi">Calcola i costi in Viaggi e costi</button>' : '') +
+          '</div></div>' +
+          '<p class="nota">' + (R.metodo === 'esatto' ? 'Con ' + R.ordine.length + ' tappe il programma ha provato tutte le combinazioni: questo è il giro più corto possibile.' : 'Con molte tappe il programma usa un metodo di ricerca molto accurato, ma non prova tutte le combinazioni.') +
+          (R.fonte === 'auto' ? ' Distanze calcolate sulle strade per auto e tempi maggiorati del 20% per un camion: con la chiave OpenRouteService si usano le strade per camion.' : ' Distanze e tempi calcolati sulle strade per camion.') + ' Gli orari sono stime: non tengono conto di traffico, pause obbligatorie e orari di apertura.</p>' +
+          '</div>';
+        disegnaMappaGiro();
+        box.querySelector('#giro-stampa').onclick = function () { window.print(); };
+        box.querySelector('#giro-copia').onclick = function () {
+          var tt = 0, testo = 'Giro del ' + new Date().toLocaleDateString('it-IT') + ' – partenza ' + g.partenza + ' da ' + g.deposito.nome + '\n' +
+            R.ordine.map(function (idx, k) {
+              var tp = g.tappe[idx]; tt += R.tratte[k].minuti * fattore; var ar = oraPiu(g.partenza, tt); tt += sosta;
+              return (k + 1) + '. ' + ar + ' ' + (tp.tipo ? (tp.tipo === 'ritiro' ? 'RITIRO' : 'CONSEGNA') + ' ' : '') + (tp.nome ? tp.nome + ' – ' : '') + tp.indirizzo + (tp.note ? ' (' + tp.note + ')' : '');
+            }).join('\n') + '\n' + (R.rientro ? 'Rientro al deposito verso le ' + fine + '\n' : '') + 'Totale ' + num(R.km, 0) + ' km';
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(testo).then(function () { avvisa('Elenco copiato: incollalo dove vuoi'); });
+        };
+        var bc = box.querySelector('#giro-costi');
+        if (bc) bc.onclick = function () {
+          var tappeV = [{ nome: g.deposito.nome, lat: g.deposito.lat, lon: g.deposito.lon }].concat(R.ordine.map(function (i) { var tp = g.tappe[i]; return { nome: (tp.nome ? tp.nome + ', ' : '') + tp.indirizzo, lat: tp.lat, lon: tp.lon }; }));
+          stato.viaggio = null;
+          location.hash = '#/viaggi';
+          stato.viaggioDaGiro = { tappe: tappeV, ritorno: R.rientro, mezzoId: g.mezzoId };
+        };
+      }
+
+      disegnaTappe();
+      mostraRisultato();
+    }).catch(errorePagina);
   }
 
   // ---------- Scadenze (revisioni) ----------
@@ -1893,7 +2282,7 @@
   }
 
   // ---------- Backup (super amministratore) ----------
-  var NOMI_TABELLE = [['aziende', 'Aziende'], ['utenti', 'Utenti'], ['mezzi', 'Mezzi'], ['complessi', 'Complessi veicolari'], ['colli_salvati', 'Colli salvati'], ['piani', 'Piani di carico'], ['viaggi', 'Viaggi']];
+  var NOMI_TABELLE = [['aziende', 'Aziende'], ['utenti', 'Utenti'], ['mezzi', 'Mezzi'], ['complessi', 'Complessi veicolari'], ['colli_salvati', 'Colli salvati'], ['piani', 'Piani di carico'], ['viaggi', 'Viaggi'], ['attivita', 'Registro attività']];
 
   function dataOra(iso) {
     var d = new Date(iso);
@@ -1968,6 +2357,321 @@
     }).catch(errorePagina);
   }
 
+  // ---------- Statistiche di utilizzo (solo super amministratore) ----------
+  var PERIODI_STAT = [[7, '7 giorni'], [30, '30 giorni'], [90, '90 giorni'], [365, '12 mesi']];
+  var METRICHE = [['azioni', 'Operazioni'], ['accessi', 'Accessi'], ['utenti', 'Utenti attivi'], ['aziende', 'Aziende attive']];
+  var SEMAFORO = {
+    attiva: { testo: 'Attiva', simbolo: '●', ordine: 3 },
+    calo: { testo: 'In calo', simbolo: '▲', ordine: 2 },
+    ferma: { testo: 'Ferma', simbolo: '■', ordine: 1 },
+    sospesa: { testo: 'Sospesa', simbolo: '–', ordine: 4 }
+  };
+
+  function quando(iso) {
+    if (!iso) return 'mai';
+    var d = new Date(iso), oggi = new Date();
+    var g0 = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate());
+    var gd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var diff = Math.round((g0 - gd) / 86400000);
+    var ora = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    if (diff === 0) return 'oggi alle ' + ora;
+    if (diff === 1) return 'ieri alle ' + ora;
+    if (diff < 7) return diff + ' giorni fa';
+    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function giornoBreve(iso) { return new Date(iso + 'T00:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }); }
+  function giornoLungo(iso) { return new Date(iso + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' }); }
+  function badgeSemaforo(s) {
+    var d = SEMAFORO[s.stato];
+    return '<span class="semaforo semaforo-' + s.stato + '" title="' + esc(s.motivo) + '"><i aria-hidden="true">' + d.simbolo + '</i>' + d.testo + '</span>';
+  }
+
+  // Tetto "pulito" per l'asse (1, 2, 5, 10, 20, 50…)
+  function tettoAsse(max) {
+    if (max <= 0) return { tetto: 4, passo: 1 };
+    var grezzo = max / 4, pot = Math.pow(10, Math.floor(Math.log10(grezzo)));
+    var passo = [1, 2, 2.5, 5, 10].map(function (m) { return m * pot; }).filter(function (p) { return p >= grezzo; })[0];
+    passo = Math.max(1, passo);
+    return { tetto: Math.ceil(max / passo) * passo, passo: passo };
+  }
+
+  // Tooltip unico, riusato da tutti i grafici della pagina
+  function tooltipGrafico(box) {
+    var t = document.createElement('div');
+    t.className = 'tooltip-grafico';
+    t.hidden = true;
+    box.appendChild(t);
+    return {
+      mostra: function (e, valore, etichetta, extra) {
+        t.textContent = '';
+        var v = document.createElement('b'); v.textContent = valore; t.appendChild(v);
+        var l = document.createElement('span'); l.textContent = etichetta; t.appendChild(l);
+        if (extra) { var x = document.createElement('small'); x.textContent = extra; t.appendChild(x); }
+        t.hidden = false;
+        var r = box.getBoundingClientRect(), w = t.offsetWidth;
+        var x0 = e.clientX - r.left + 14;
+        if (x0 + w > r.width) x0 = e.clientX - r.left - w - 14;
+        t.style.left = Math.max(0, x0) + 'px';
+        t.style.top = Math.max(0, e.clientY - r.top - 12) + 'px';
+      },
+      nascondi: function () { t.hidden = true; }
+    };
+  }
+
+  // Colonne giorno per giorno (una sola serie). Oltre 92 giorni raggruppa per settimana.
+  function graficoColonne(box, serie, chiave, nomeMetrica) {
+    var punti = serie;
+    if (serie.length > 92) {
+      punti = [];
+      for (var i = 0; i < serie.length; i += 7) {
+        var sett = serie.slice(i, i + 7), somma = 0;
+        sett.forEach(function (x) { somma += x[chiave]; });
+        // Per utenti e aziende attive la somma dei giorni non ha senso: si mostra il massimo giornaliero
+        if (chiave === 'utenti' || chiave === 'aziende') somma = Math.max.apply(null, sett.map(function (x) { return x[chiave]; }));
+        punti.push({ giorno: sett[0].giorno, fine: sett[sett.length - 1].giorno, valore: somma, settimana: true });
+      }
+    } else {
+      punti = serie.map(function (x) { return { giorno: x.giorno, valore: x[chiave] }; });
+    }
+    var W = Math.max(320, box.clientWidth || 800), H = 240, sx = 44, dx = 10, su = 12, giu = 28;
+    var larg = (W - sx - dx) / punti.length;
+    var barra = Math.max(2, Math.min(24, larg - 2));
+    var max = Math.max.apply(null, punti.map(function (p) { return p.valore; }));
+    var asse = tettoAsse(max), h = H - su - giu;
+    function y(v) { return su + h - (v / asse.tetto) * h; }
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="svg-grafico" role="img" aria-label="' + esc(nomeMetrica) + ' per ' + (punti[0] && punti[0].settimana ? 'settimana' : 'giorno') + '">';
+    for (var v = 0; v <= asse.tetto + 1e-9; v += asse.passo) {
+      svg += '<line x1="' + sx + '" x2="' + (W - dx) + '" y1="' + y(v) + '" y2="' + y(v) + '" class="griglia' + (v === 0 ? ' base' : '') + '"/>' +
+        '<text x="' + (sx - 8) + '" y="' + (y(v) + 4) + '" class="asse" text-anchor="end">' + num(v) + '</text>';
+    }
+    var ogni = Math.ceil(punti.length / Math.max(2, Math.floor((W - sx) / 70)));
+    punti.forEach(function (p, i) {
+      var cx = sx + i * larg + larg / 2, x = cx - barra / 2, top = y(p.valore), alto = y(0) - top;
+      if (p.valore > 0) {
+        var rr = Math.min(4, barra / 2, alto);
+        svg += '<path class="barra" d="M' + x + ' ' + y(0) + 'V' + (top + rr) + 'Q' + x + ' ' + top + ' ' + (x + rr) + ' ' + top + 'H' + (x + barra - rr) + 'Q' + (x + barra) + ' ' + top + ' ' + (x + barra) + ' ' + (top + rr) + 'V' + y(0) + 'Z"/>';
+      }
+      svg += '<rect class="zona" data-i="' + i + '" x="' + (sx + i * larg) + '" y="' + su + '" width="' + larg + '" height="' + (h + 1) + '"/>';
+      if (i % ogni === 0) svg += '<text x="' + cx + '" y="' + (H - 8) + '" class="asse" text-anchor="middle">' + giornoBreve(p.giorno) + '</text>';
+    });
+    svg += '</svg>';
+    box.innerHTML = svg;
+    var tip = tooltipGrafico(box);
+    box.querySelectorAll('.zona').forEach(function (z) {
+      z.addEventListener('pointermove', function (e) {
+        var p = punti[Number(z.dataset.i)];
+        box.querySelectorAll('.zona.su').forEach(function (a) { a.classList.remove('su'); });
+        z.classList.add('su');
+        tip.mostra(e, num(p.valore), nomeMetrica, p.settimana ? 'Settimana dal ' + giornoBreve(p.giorno) + ' al ' + giornoBreve(p.fine) + (chiave === 'utenti' || chiave === 'aziende' ? ' (massimo in un giorno)' : '') : giornoLungo(p.giorno));
+      });
+      z.addEventListener('pointerleave', function () { z.classList.remove('su'); tip.nascondi(); });
+    });
+    return punti;
+  }
+
+  // Barre orizzontali (una serie), valore alla punta
+  function graficoBarre(box, voci) {
+    var max = Math.max(1, Math.max.apply(null, voci.map(function (v) { return v.valore; })));
+    box.innerHTML = '<div class="barre-oriz">' + voci.map(function (v) {
+      return '<div class="barra-riga' + (v.spenta ? ' spenta' : '') + '"><span class="barra-nome">' + esc(v.nome) + (v.nota ? '<small>' + esc(v.nota) + '</small>' : '') + '</span>' +
+        '<span class="barra-traccia"><i style="width:' + (v.valore / max * 100) + '%"></i><b>' + num(v.valore) + '</b></span></div>';
+    }).join('') + '</div>';
+  }
+
+  // Mappa di calore giorno della settimana × ora (una tinta, da chiara a scura)
+  function mappaOrari(box, orari) {
+    var giorni = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'], m = {}, max = 0;
+    orari.forEach(function (o) { m[o.dow + '|' + o.ora] = o.n; if (o.n > max) max = o.n; });
+    var html = '<div class="mappa-orari"><span></span>';
+    for (var h = 0; h < 24; h++) html += '<span class="ora">' + (h % 3 === 0 ? h : '') + '</span>';
+    for (var d = 1; d <= 7; d++) {
+      html += '<span class="giorno">' + giorni[d - 1] + '</span>';
+      for (var o = 0; o < 24; o++) {
+        var n = m[d + '|' + o] || 0;
+        var liv = n ? 0.14 + 0.86 * Math.sqrt(n / max) : 0;
+        html += '<span class="cella" data-d="' + d + '" data-o="' + o + '" data-n="' + n + '" style="' + (n ? 'background:rgba(27,31,36,' + liv.toFixed(2) + ')' : '') + '"></span>';
+      }
+    }
+    html += '</div><div class="scala-calore"><span>meno</span><i></i><span>più</span></div>';
+    box.innerHTML = html;
+    var tip = tooltipGrafico(box);
+    box.querySelectorAll('.cella').forEach(function (c) {
+      c.addEventListener('pointermove', function (e) {
+        var d2 = ['lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica'][c.dataset.d - 1];
+        tip.mostra(e, num(Number(c.dataset.n)), 'attività', d2 + ' dalle ' + c.dataset.o + ':00 alle ' + (Number(c.dataset.o) + 1) + ':00');
+      });
+      c.addEventListener('pointerleave', function () { tip.nascondi(); });
+    });
+  }
+
+  function filtroPeriodo(g) {
+    return '<div class="filtri-stat no-stampa"><span class="nota">Periodo</span>' + PERIODI_STAT.map(function (p) {
+      return '<button class="filtro' + (p[0] === g ? ' attivo' : '') + '" data-periodo="' + p[0] + '">' + p[1] + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function metricheDi(r) { return r.azienda ? METRICHE.filter(function (x) { return x[0] !== 'aziende'; }) : METRICHE; }
+  function metricaScelta(r) {
+    var m = stato.metricaStat || 'azioni';
+    return metricheDi(r).some(function (x) { return x[0] === m; }) ? m : 'azioni';
+  }
+  function sezioneAndamento(r) {
+    var m = metricaScelta(r), METR = metricheDi(r);
+    return '<section class="pannello"><div class="testa-grafico"><div><h2>Andamento</h2><p class="nota">' +
+      (r.giorni > 92 ? 'Una colonna per settimana.' : 'Una colonna per giorno.') + ' Passa sulle colonne per i valori.</p></div>' +
+      '<div class="scelta-metrica" role="group" aria-label="Cosa mostrare">' + METR.map(function (x) {
+        return '<button class="' + (x[0] === m ? 'attivo' : '') + '" data-metrica="' + x[0] + '">' + x[1] + '</button>';
+      }).join('') + '</div></div>' +
+      '<div class="grafico" id="g-andamento"></div>' +
+      '<details class="tabella-dati"><summary>Mostra i numeri in tabella</summary><div class="tabella-scroll"><table><thead><tr><th>Giorno</th>' +
+        METR.map(function (x) { return '<th class="num">' + x[1] + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        r.serie.slice().reverse().map(function (x) {
+          return '<tr><td>' + giornoLungo(x.giorno) + '</td>' + METR.map(function (k) { return '<td class="num">' + num(x[k[0]]) + '</td>'; }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div></details></section>';
+  }
+
+  function vociFunzioni(r, azienda) {
+    return Object.keys(r.nomiFunzioni).map(function (f) {
+      var u = r.perFunzione[f] || { aperture: 0, azioni: 0 };
+      var spenta = azienda && azienda.funzioni[f] === false;
+      return { nome: r.nomiFunzioni[f], valore: u.aperture + u.azioni, nota: spenta ? 'non attivata' : num(u.azioni) + ' operazioni, ' + num(u.aperture) + ' aperture', spenta: spenta };
+    }).sort(function (a, b) { return b.valore - a.valore; });
+  }
+
+  function collegaAndamento(main, r) {
+    function disegna() {
+      var m = metricaScelta(r);
+      graficoColonne(main.querySelector('#g-andamento'), r.serie, m, METRICHE.filter(function (x) { return x[0] === m; })[0][1]);
+    }
+    main.querySelectorAll('[data-metrica]').forEach(function (b) {
+      b.onclick = function () {
+        stato.metricaStat = b.dataset.metrica;
+        main.querySelectorAll('[data-metrica]').forEach(function (x) { x.classList.toggle('attivo', x === b); });
+        disegna();
+      };
+    });
+    disegna();
+  }
+
+  function vistaStatistiche() {
+    var g = stato.periodoStat || 30;
+    api('GET', '/api/statistiche?giorni=' + g).then(function (r) {
+      var t = r.totali, az = r.aziende;
+      var attiveAz = az.filter(function (a) { return a.attiva; });
+      var conta = { attiva: 0, calo: 0, ferma: 0 };
+      attiveAz.forEach(function (a) { conta[a.semaforo.stato]++; });
+      var disp = r.dispositivi, totDisp = (disp.telefono || 0) + (disp.computer || 0);
+      var filtroSem = stato.filtroSemaforo || 'tutte';
+      var elenco = az.slice().sort(function (a, b) {
+        return (SEMAFORO[a.semaforo.stato].ordine - SEMAFORO[b.semaforo.stato].ordine) || a.nome.localeCompare(b.nome);
+      }).filter(function (a) { return filtroSem === 'tutte' || a.semaforo.stato === filtroSem; });
+      var accessiP = r.serie.reduce(function (s, x) { return s + x.accessi; }, 0);
+      var azioniP = r.serie.reduce(function (s, x) { return s + x.azioni; }, 0);
+
+      var main = guscio('statistiche',
+        '<div class="testata"><div><h1>Statistiche</h1><p>Come viene usato il programma, azienda per azienda. Le vedi solo tu: i titolari non hanno accesso a queste informazioni.</p></div>' +
+        '<div class="riga-azioni no-stampa"><a class="btn" href="/api/statistiche/esporta?giorni=' + g + '" download>Esporta in Excel</a></div></div>' +
+        filtroPeriodo(g) +
+        '<div class="tile-stat">' +
+          '<div><span>Aziende attive negli ultimi 7 giorni</span><b>' + num(t.aziende7) + '<small> su ' + num(attiveAz.length) + '</small></b></div>' +
+          '<div><span>Utenti attivi negli ultimi 7 giorni</span><b>' + num(t.utenti7) + '<small> su ' + num(t.utenti) + '</small></b></div>' +
+          '<div><span>Accessi nel periodo</span><b>' + num(accessiP) + '</b></div>' +
+          '<div><span>Operazioni nel periodo</span><b>' + num(azioniP) + '</b></div>' +
+          '<div><span>Da telefono</span><b>' + (totDisp ? num(Math.round((disp.telefono || 0) / totDisp * 100)) + '%' : '–') + '</b></div>' +
+          '<div><span>Aziende oggi</span><b>' + num(t.aziendeoggi) + '</b></div>' +
+        '</div>' +
+        '<section class="pannello"><div class="testa-grafico"><div><h2>Aziende clienti</h2><p class="nota">Semaforo: attiva se usata negli ultimi 7 giorni, in calo se ferma da 7 giorni o con uso dimezzato rispetto al mese prima, ferma se non usata da 14 giorni.</p></div></div>' +
+          '<div class="filtri-scadenze">' + [['tutte', 'Tutte', az.length], ['ferma', 'Ferme', conta.ferma], ['calo', 'In calo', conta.calo], ['attiva', 'Attive', conta.attiva]].map(function (f) {
+            return '<button class="filtro filtro-sem-' + f[0] + (f[0] === filtroSem ? ' attivo' : '') + '" data-sem="' + f[0] + '"><b>' + f[2] + '</b> ' + f[1] + '</button>';
+          }).join('') + '</div>' +
+          '<div class="tabella-scroll"><table class="tab-stat"><thead><tr><th>Azienda</th><th>Utilizzo</th><th>Ultimo utilizzo</th><th class="num">Utenti attivi</th><th class="num">Accessi</th><th class="num">Operazioni</th><th>Funzioni nel periodo</th><th></th></tr></thead><tbody>' +
+          (elenco.length ? elenco.map(function (a) {
+            var funz = Object.keys(r.nomiFunzioni).filter(function (f) { return f !== 'mezzi' && a.funzioni[f] !== false; }).map(function (f) {
+              var n = a.usoFunzioni[f] || 0;
+              return '<span class="chip-funz' + (n ? '' : ' mai') + '" title="' + (n ? num(n) + ' utilizzi' : 'mai usata nel periodo') + '">' + esc(r.nomiFunzioni[f]) + (n ? '' : ' · mai') + '</span>';
+            }).join('');
+            return '<tr><td><a href="#/statistiche/' + a.id + '"><b>' + esc(a.nome) + '</b></a></td>' +
+              '<td>' + badgeSemaforo(a.semaforo) + '<div class="nota">' + esc(a.semaforo.motivo) + '</div></td>' +
+              '<td>' + quando(a.ultimo) + '</td>' +
+              '<td class="num">' + num(a.utenti_attivi) + ' / ' + num(a.utenti) + (a.mai_entrati ? '<div class="nota">' + a.mai_entrati + ' mai entrati</div>' : '') + '</td>' +
+              '<td class="num">' + num(a.accessi) + '</td><td class="num">' + num(a.azioni) + '</td>' +
+              '<td class="funz-cella">' + funz + '</td>' +
+              '<td class="num"><a class="btn-testo" href="#/statistiche/' + a.id + '">Dettaglio</a></td></tr>';
+          }).join('') : '<tr><td colspan="8" class="nota">Nessuna azienda in questo elenco.</td></tr>') +
+          '</tbody></table></div></section>' +
+        sezioneAndamento(r) +
+        '<div class="due-colonne">' +
+          '<section class="pannello"><h2>Funzioni più usate</h2><p class="nota" style="margin-bottom:14px">Aperture delle pagine e operazioni, tutte le aziende.</p><div id="g-funzioni"></div></section>' +
+          '<section class="pannello"><h2>Giorni e orari</h2><p class="nota" style="margin-bottom:14px">Quando si lavora col programma (ora italiana).</p><div class="grafico" id="g-orari"></div></section>' +
+        '</div>' +
+        '<p class="nota" style="margin-top:18px">Registro attivo dal ' + (t.primo_evento ? new Date(t.primo_evento).toLocaleDateString('it-IT') : 'oggi') + '. Si registra solo che una funzione è stata usata, mai i dati inseriti. Le attività più vecchie di ' + r.conservazioneMesi + ' mesi vengono cancellate automaticamente. Lo storico precedente al registro è ricostruito dai piani e viaggi salvati.</p>');
+
+      main.querySelectorAll('[data-periodo]').forEach(function (b) {
+        b.onclick = function () { stato.periodoStat = Number(b.dataset.periodo); vistaStatistiche(); };
+      });
+      main.querySelectorAll('[data-sem]').forEach(function (b) {
+        b.onclick = function () { stato.filtroSemaforo = b.dataset.sem; vistaStatistiche(); };
+      });
+      collegaAndamento(main, r);
+      graficoBarre(main.querySelector('#g-funzioni'), vociFunzioni(r));
+      mappaOrari(main.querySelector('#g-orari'), r.orari);
+    }).catch(errorePagina);
+  }
+
+  function vistaStatAzienda(id) {
+    var g = stato.periodoStat || 30;
+    api('GET', '/api/statistiche/azienda/' + id + '?giorni=' + g).then(function (r) {
+      var a = r.azienda;
+      var giorniUso = r.serie.filter(function (x) { return x.accessi + x.azioni > 0; }).length;
+      var main = guscio('statistiche',
+        '<div class="riga-azioni" style="margin-bottom:8px"><a class="btn-testo" href="#/statistiche">Torna alle statistiche</a></div>' +
+        '<div class="testata"><div><h1>' + esc(a.nome) + '</h1><p>' + badgeSemaforo(a.semaforo) + ' ' + esc(a.semaforo.motivo) + '. Cliente dal ' + new Date(a.creata_il).toLocaleDateString('it-IT') + ', ' + num(a.mezzi) + ' mezzi inseriti.</p></div>' +
+        '<div class="riga-azioni no-stampa"><a class="btn" href="#/aziende/' + a.id + '">Gestisci utenti</a></div></div>' +
+        filtroPeriodo(g) +
+        '<div class="tile-stat">' +
+          '<div><span>Utenti attivi nel periodo</span><b>' + num(a.utenti_attivi) + '<small> su ' + num(a.utenti) + '</small></b></div>' +
+          '<div><span>Giorni di utilizzo</span><b>' + num(giorniUso) + '<small> su ' + num(r.giorni) + '</small></b></div>' +
+          '<div><span>Accessi</span><b>' + num(a.accessi) + '</b></div>' +
+          '<div><span>Operazioni</span><b>' + num(a.azioni) + '</b></div>' +
+          '<div><span>Ultimo utilizzo</span><b class="piccolo">' + quando(a.ultimo) + '</b></div>' +
+        '</div>' +
+        '<section class="pannello"><h2>Utenti</h2><p class="nota" style="margin-bottom:12px">Numeri del periodo scelto. “Cronologia” mostra le ultime attività registrate.</p>' +
+          '<div class="tabella-scroll"><table><thead><tr><th>Utente</th><th>Ruolo</th><th>Ultimo accesso</th><th class="num">Giorni attivi</th><th class="num">Accessi</th><th class="num">Operazioni</th><th class="num">Da telefono</th><th>Usa di più</th><th></th></tr></thead><tbody>' +
+          r.utenti.map(function (u) {
+            return '<tr class="' + (u.attivo ? '' : 'spento') + '"><td><b>' + esc(u.nome) + '</b><div class="nota">' + esc(u.email) + '</div></td>' +
+              '<td>' + (u.ruolo === 'admin' ? 'Titolare' : 'Operatore') + (u.attivo ? '' : ' <span class="etichetta no">Sospeso</span>') + '</td>' +
+              '<td>' + (u.ultimo_accesso ? quando(u.ultimo_accesso) : '<span class="etichetta rev-vicina">Mai entrato</span>') + '</td>' +
+              '<td class="num">' + num(u.giorni_attivi) + '</td><td class="num">' + num(u.accessi) + '</td><td class="num">' + num(u.azioni) + '</td>' +
+              '<td class="num">' + (u.eventi ? num(Math.round(u.da_telefono / u.eventi * 100)) + '%' : '–') + '</td>' +
+              '<td>' + esc(u.funzionePreferita || '–') + '</td>' +
+              '<td class="num"><button class="btn-testo" data-cron="' + u.id + '">Cronologia</button></td></tr>';
+          }).join('') + '</tbody></table></div></section>' +
+        sezioneAndamento(r) +
+        '<section class="pannello"><h2>Funzioni</h2><p class="nota" style="margin-bottom:14px">Aperture delle pagine e operazioni nel periodo. Le funzioni non attivate per questa azienda sono in grigio.</p><div id="g-funzioni"></div></section>');
+
+      main.querySelectorAll('[data-periodo]').forEach(function (b) {
+        b.onclick = function () { stato.periodoStat = Number(b.dataset.periodo); vistaStatAzienda(id); };
+      });
+      collegaAndamento(main, r);
+      graficoBarre(main.querySelector('#g-funzioni'), vociFunzioni(r, a));
+      main.querySelectorAll('[data-cron]').forEach(function (b) {
+        b.onclick = function () {
+          api('GET', '/api/statistiche/utente/' + b.dataset.cron).then(function (c) {
+            var righe = c.attivita.map(function (x) {
+              var d = new Date(x.creato_il);
+              return '<tr><td>' + d.toLocaleDateString('it-IT') + ' ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) + '</td><td>' + esc((c.eventi[x.evento] || { nome: x.evento }).nome) + '</td><td>' + esc(x.dispositivo || '–') + '</td></tr>';
+            }).join('');
+            dialogo({
+              titolo: c.utente.nome, pulsante: 'Chiudi',
+              testo: '<p>' + esc(c.utente.azienda) + '. Ultime ' + c.attivita.length + ' attività registrate.</p>' +
+                (righe ? '<div class="cronologia"><table><thead><tr><th>Quando</th><th>Cosa</th><th>Da</th></tr></thead><tbody>' + righe + '</tbody></table></div>' : '<p>Nessuna attività registrata.</p>')
+            });
+          }).catch(function (err) { avvisa(err.message); });
+        };
+      });
+    }).catch(errorePagina);
+  }
+
   // ---------- Account ----------
   function vistaAccount() {
     var u = stato.utente;
@@ -1997,10 +2701,12 @@
     if (!stato.utente) return;
     var parti = location.hash.replace(/^#\/?/, '').split('/');
     var sez = parti[0];
+    if (['carico', 'piani', 'tassato', 'giri', 'viaggi', 'mezzi', 'scadenze'].indexOf(sez) >= 0 && haFunzione(sez === 'piani' ? 'carico' : sez)) traccia('pagina:' + sez);
     var admin = stato.utente.ruolo === 'superadmin';
     if (admin) {
       if (sez === 'account') return vistaAccount();
       if (sez === 'backup') return vistaBackup();
+      if (sez === 'statistiche') return parti[1] ? vistaStatAzienda(Number(parti[1])) : vistaStatistiche();
       if (sez === 'aziende' && parti[1]) return vistaUtentiAzienda(Number(parti[1]));
       return vistaAziende();
     }
@@ -2008,6 +2714,7 @@
       case 'carico': return haFunzione('carico') ? vistaCarico() : vistaHome();
       case 'viaggi': return haFunzione('viaggi') ? vistaViaggi(parti[1] ? Number(parti[1]) : null) : vistaHome();
       case 'tassato': return haFunzione('tassato') ? vistaTassato() : vistaHome();
+      case 'giri': return haFunzione('giri') ? vistaGiri() : vistaHome();
       case 'mezzi': return vistaMezzi();
       case 'scadenze': return haFunzione('scadenze') ? vistaScadenze() : vistaHome();
       case 'piani': return !haFunzione('carico') ? vistaHome() : (parti[1] ? vistaPiano(Number(parti[1])) : vistaPiani());
@@ -2017,9 +2724,10 @@
     }
   }
 
-  function avvia() {
+  function avvia(dopoLogin) {
     return api('GET', '/api/me').then(function (u) {
       stato.utente = u;
+      if (dopoLogin !== true) traccia('sessione');
       naviga();
     });
   }

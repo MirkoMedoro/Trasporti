@@ -98,11 +98,33 @@ async function inizializza() {
     CREATE INDEX IF NOT EXISTS idx_complessi_azienda ON complessi(azienda_id);
     ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS proprieta TEXT NOT NULL DEFAULT 'proprio';
     ALTER TABLE mezzi ADD COLUMN IF NOT EXISTS ditta TEXT;
+    -- Registro delle attività (solo per le statistiche del super amministratore)
+    ALTER TABLE utenti ADD COLUMN IF NOT EXISTS ultimo_accesso TIMESTAMPTZ;
+    CREATE TABLE IF NOT EXISTS attivita (
+      id BIGSERIAL PRIMARY KEY,
+      azienda_id INT NOT NULL REFERENCES aziende(id) ON DELETE CASCADE,
+      utente_id INT REFERENCES utenti(id) ON DELETE SET NULL,
+      evento TEXT NOT NULL,
+      dispositivo TEXT,
+      creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_attivita_azienda ON attivita(azienda_id, creato_il);
+    CREATE INDEX IF NOT EXISTS idx_attivita_utente ON attivita(utente_id, creato_il);
+    CREATE INDEX IF NOT EXISTS idx_attivita_data ON attivita(creato_il);
     CREATE INDEX IF NOT EXISTS idx_utenti_azienda ON utenti(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_mezzi_azienda ON mezzi(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_colli_azienda ON colli_salvati(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_piani_azienda ON piani(azienda_id);
   `);
+  // Primo avvio del registro: ricostruisce lo storico dai piani e viaggi già salvati
+  const vuoto = await pool.query('SELECT 1 FROM attivita LIMIT 1');
+  if (!vuoto.rowCount) {
+    await pool.query(`
+      INSERT INTO attivita (azienda_id, utente_id, evento, creato_il)
+        SELECT azienda_id, creato_da, 'piano_salvato', creato_il FROM piani
+        UNION ALL
+        SELECT azienda_id, creato_da, 'viaggio_salvato', creato_il FROM viaggi`);
+  }
 }
 
 module.exports = { pool, inizializza };

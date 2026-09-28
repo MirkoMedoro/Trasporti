@@ -5,6 +5,7 @@ const FUNZIONI = [
   { id: 'viaggi', nome: 'Viaggi e costi' },
   { id: 'scadenze', nome: 'Scadenze' },
   { id: 'tassato', nome: 'Calcolatore' },
+  { id: 'giri', nome: 'Ottimizza giro' },
 ];
 
 // Una funzione è attiva se non è stata spenta esplicitamente

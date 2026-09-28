@@ -117,8 +117,31 @@ OpenStreetMap sono pensate per un uso leggero).
 ## Funzioni per azienda
 
 Nel pannello **Aziende clienti** ogni azienda ha le spunte delle funzioni
-("Piano di carico", "Calcolatore", "Viaggi e costi", "Scadenze"). Togliendo la spunta, la funzione
+("Piano di carico", "Calcolatore", "Viaggi e costi", "Scadenze", "Ottimizza giro"). Togliendo la spunta, la funzione
 sparisce dal menu di quell'azienda e viene bloccata anche sul server.
+
+## Ottimizza giro
+
+Menu **Strumenti → Ottimizza giro**. Si carica il PDF della distinta (o
+borderò) e il programma legge ritiri e consegne: nella prima colonna un
+numero da solo è una consegna, un numero con "RIT" è un ritiro. Indirizzo,
+località e provincia dicono dove andare; i pallet finiscono nelle note.
+
+- Controlla la tabella delle tappe: si può correggere, aggiungere o togliere.
+- Scrivi l'indirizzo di **partenza (deposito)** e premi **Usa questi valori
+  come predefiniti**: la volta dopo è già compilato.
+- Scegli come deve girare l'autista: **Tutto insieme** (meno km possibili)
+  oppure **Prima tutte le consegne, poi i ritiri**. Le tappe segnate
+  "Urgente" vengono fatte per prime.
+- Il risultato mostra km risparmiati, gasolio, orari, la mappa, i link per
+  Google Maps sul telefono dell'autista e il passaggio a "Viaggi e costi".
+
+Funziona senza configurare nulla con i PDF creati da un programma (con
+testo). Per leggere anche PDF scansionati o foto serve la lettura
+intelligente: su Railway aggiungi nelle **Variables** `ANTHROPIC_API_KEY` con
+una chiave creata su **https://console.anthropic.com** (a pagamento, pochi
+centesimi a distinta). Senza chiave, per le scansioni si possono scrivere o
+incollare le tappe a mano.
 
 ## Backup dei dati
 
@@ -142,3 +165,26 @@ Consigli:
 - Il backup del programma si aggiunge a quelli del database fatti da Railway,
   non li sostituisce: nella pagina del database su Railway controlla quali
   backup automatici offre il tuo piano.
+
+## Statistiche di utilizzo
+
+Dal pannello del super amministratore, voce **Statistiche**. Le vedi solo tu:
+i titolari e gli operatori non hanno accesso a queste informazioni.
+
+- **Semaforo delle aziende**: attiva (usata negli ultimi 7 giorni), in calo
+  (ferma da 7 giorni o con uso dimezzato rispetto al mese precedente), ferma
+  (non usata da 14 giorni o mai). Le aziende ferme e in calo sono i clienti da
+  chiamare.
+- **Andamento** giorno per giorno (o per settimana sui 12 mesi): operazioni,
+  accessi, utenti attivi, aziende attive.
+- **Funzioni più usate**, **giorni e orari** di lavoro, quota di utilizzo da
+  telefono.
+- **Dettaglio azienda**: utenti con ultimo accesso, giorni attivi, operazioni,
+  funzione più usata, chi non è mai entrato, e la cronologia delle ultime
+  attività di ciascuno.
+- **Esporta in Excel**: una riga per utente con tutti i numeri del periodo.
+
+Il programma registra solo *che* una funzione è stata usata (per esempio
+"ha calcolato un piano di carico"), mai i dati inseriti. Le attività più
+vecchie di 13 mesi vengono cancellate automaticamente. Indica questo
+trattamento nel contratto e nell'informativa privacy per i tuoi clienti.

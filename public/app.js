@@ -21,6 +21,7 @@
     scadenze: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/></svg>',
     backup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6M4.5 11.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg>',
     tassato: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 8h10l2.5 12h-15z"/><path d="M9.5 8a2.5 2.5 0 0 1 5 0"/><path d="M9 14h6M12 11.5v5"/></svg>',
+    strumenti: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.5 5.5a4 4 0 0 0 5 5L12 18a2.1 2.1 0 0 1-3-3z"/><path d="M14.5 5.5 17 3l1 3 3 1-2.5 2.5"/><path d="M4 20l3-3"/></svg>',
     account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.2-7 8-7s7 2.5 8 7"/></svg>'
   };
 
@@ -30,6 +31,7 @@
     colliSalvati: [],
     piano: { unita: null, righe: [], risultato: null },
     viste3d: [],
+    menuAperti: {},
     viaggio: null,
     mappa: null
   };
@@ -136,8 +138,10 @@
     var r = stato.utente.ruolo;
     if (r === 'superadmin') return [['aziende', 'Aziende clienti'], ['backup', 'Backup'], ['account', 'Il mio account']];
     var v = [['home', 'Home']];
-    if (haFunzione('carico')) v.push(['carico', 'Piano di carico']);
-    if (haFunzione('tassato')) v.push(['tassato', 'Peso tassato']);
+    var strumenti = [];
+    if (haFunzione('carico')) strumenti.push(['carico', 'Piano di carico']);
+    if (haFunzione('tassato')) strumenti.push(['tassato', 'Calcolatore']);
+    if (strumenti.length) v.push({ gruppo: 'strumenti', nome: 'Strumenti', voci: strumenti });
     if (haFunzione('viaggi')) v.push(['viaggi', 'Viaggi e costi']);
     v.push(['mezzi', 'Mezzi']);
     if (haFunzione('scadenze')) v.push(['scadenze', 'Scadenze']);
@@ -150,8 +154,17 @@
   function guscio(sezione, html) {
     chiudi3D();
     var u = stato.utente;
+    function voce(v, figlia) {
+      return '<a href="#/' + v[0] + '" class="' + (v[0] === sezione ? 'attivo' : '') + (figlia ? ' figlia' : '') + '">' + ICONE[v[0]] + '<span>' + v[1] + '</span></a>';
+    }
     var menu = vociMenu().map(function (v) {
-      return '<a href="#/' + v[0] + '" class="' + (v[0] === sezione ? 'attivo' : '') + '">' + ICONE[v[0]] + '<span>' + v[1] + '</span></a>';
+      if (!v.gruppo) return voce(v);
+      // Gruppo apribile: resta aperto se contiene la pagina attuale o se l'utente l'ha aperto
+      var dentro = v.voci.some(function (x) { return x[0] === sezione; });
+      var aperto = dentro || !!stato.menuAperti[v.gruppo];
+      return '<div class="menu-gruppo' + (aperto ? ' aperto' : '') + (dentro ? ' contiene-attivo' : '') + '">' +
+        '<button type="button" class="menu-titolo" data-gruppo="' + v.gruppo + '" aria-expanded="' + aperto + '">' + ICONE[v.gruppo] + '<span>' + v.nome + '</span><i class="freccia" aria-hidden="true"></i></button>' +
+        '<div class="menu-figli">' + v.voci.map(function (x) { return voce(x, true); }).join('') + '</div></div>';
     }).join('');
     app.innerHTML =
       '<div class="guscio">' +
@@ -164,6 +177,14 @@
         '</aside>' +
         '<main class="contenuto">' + html + '</main>' +
       '</div>';
+    app.querySelectorAll('[data-gruppo]').forEach(function (b) {
+      b.onclick = function () {
+        var g = b.closest('.menu-gruppo'), aperto = !g.classList.contains('aperto');
+        g.classList.toggle('aperto', aperto);
+        b.setAttribute('aria-expanded', aperto);
+        stato.menuAperti[b.dataset.gruppo] = aperto;
+      };
+    });
     document.getElementById('esci').onclick = function () {
       api('POST', '/api/logout').then(function () { stato.utente = null; location.hash = '#/'; mostraAccesso(); });
     };
@@ -174,7 +195,7 @@
   function vistaHome() {
     var tessere = [];
     if (haFunzione('carico')) tessere.push(['carico', 'Piano di carico', 'Inserisci i colli e ottieni la disposizione migliore.']);
-    if (haFunzione('tassato')) tessere.push(['tassato', 'Peso tassato', 'Peso reale, volume, peso tassato e prezzo di una spedizione in pochi secondi.']);
+    if (haFunzione('tassato')) tessere.push(['tassato', 'Calcolatore', 'Calcolo del volume reale, del peso tassato e del prezzo di una spedizione.']);
     if (haFunzione('viaggi')) tessere.push(['viaggi', 'Viaggi e costi', 'Km del percorso, costo del viaggio e prezzo di pareggio.']);
     tessere.push(['mezzi', 'Mezzi', 'La flotta con misure, portata, revisione e complessi veicolari.']);
     if (haFunzione('scadenze')) tessere.push(['scadenze', 'Scadenze', 'Le revisioni in arrivo di tutti i mezzi.']);
@@ -697,7 +718,7 @@
           box.querySelectorAll('[data-usa]').forEach(function (b) {
             b.onclick = function () { selMezzo.value = b.dataset.usa; aggiornaMisure(); calcola(); };
           });
-          // Arrivando dal peso tassato: si calcola subito il carico sul mezzo consigliato
+          // Arrivando dal calcolatore: si calcola subito il carico sul mezzo consigliato
           if (automatico && migliore) { selMezzo.value = migliore.u.chiave; aggiornaMisure(); calcola(); return; }
           box.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
@@ -1283,7 +1304,7 @@
     }).catch(errorePagina);
   }
 
-  // ---------- Peso tassato (calcolo rapido per il prezzo) ----------
+  // ---------- Calcolatore: volume reale, peso tassato, prezzo ----------
   // Semirimorchio standard su cui si misurano i metri lineari
   var VANO_LDM = { nome: 'Semirimorchio standard', lunghezza: 1360, larghezza: 248, altezza: 270, portata: Infinity };
   var RIGHE_RAPIDE = {
@@ -1364,9 +1385,8 @@
       var t = stato.tassato;
 
       var main = guscio('tassato',
-        '<div class="testata"><div><h1>Peso tassato</h1><p>Inserisci i colli della spedizione: il programma calcola peso reale, volume, peso tassato e metri lineari, e ti propone il prezzo.</p></div>' +
+        '<div class="testata"><div><h1>Calcolatore</h1><p>Calcolo del volume reale, del peso tassato e dei metri lineari di una spedizione, con il prezzo da proporre al cliente. Inserisci i colli e i totali si aggiornano mentre scrivi.</p></div>' +
         '<div class="riga-azioni"><button class="btn" id="t-nuovo">Nuovo calcolo</button></div></div>' +
-        '<div class="tassato-cruscotto" id="t-cruscotto"></div>' +
         '<section class="pannello">' +
           '<div class="tassato-regole">' +
             '<label class="campo">1 m³ equivale a<span class="con-unita"><input type="number" min="1" step="1" id="t-rapporto" value="' + esc(t.rapporto) + '"><span>kg</span></span></label>' +
@@ -1385,6 +1405,7 @@
             '<span class="nota">Invio sull’ultimo campo aggiunge una riga.</span>' +
           '</div>' +
         '</section>' +
+        '<div class="tassato-cruscotto" id="t-cruscotto"></div>' +
         '<section class="pannello">' +
           '<h2>Prezzo</h2>' +
           '<div class="griglia-form" style="margin-top:14px">' +

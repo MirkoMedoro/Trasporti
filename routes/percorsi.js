@@ -52,6 +52,103 @@ async function chiedi(url, opzioni) {
   } finally { clearTimeout(timer); }
 }
 
+// ---------- Ricerca di una tappa con verifica del comune ----------
+// Usata da "Ottimizza giro": cerca l'indirizzo DENTRO il comune e la provincia della distinta.
+// Un risultato in un altro comune (es. una via con lo stesso nome a Padova) viene scartato:
+// in quel caso si prende il centro del comune giusto e la tappa è segnata "solo comune".
+function normalizza(t) {
+  return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function stessoPosto(nomi, localita) {
+  const l = normalizza(localita);
+  if (!l) return true;
+  return nomi.some((n) => { const x = normalizza(n); return x && (x === l || x.includes(l) || l.includes(x) && x.length >= 4); });
+}
+function viaPerRicerca(via) {
+  // "VIA STROZZI, 83 - OSTE DI MONTEMURLO" -> "VIA STROZZI 83"
+  return String(via || '').split(/\s[-–]\s/)[0].replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function trovaNominatim(p) {
+  const prova = async (parametri) => {
+    await attendiTurno();
+    const u = new URL('https://nominatim.openstreetmap.org/search');
+    u.searchParams.set('format', 'jsonv2');
+    u.searchParams.set('addressdetails', '1');
+    u.searchParams.set('limit', '8');
+    u.searchParams.set('accept-language', 'it');
+    u.searchParams.set('countrycodes', 'it');
+    u.searchParams.set('layer', 'address');
+    Object.entries(parametri).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
+    const d = await chiedi(u, { headers: { 'User-Agent': AGENTE } });
+    return (d || []).find((x) => {
+      const a = x.address || {};
+      const provOk = !p.prov || !a['ISO3166-2-lvl6'] || a['ISO3166-2-lvl6'].toUpperCase() === 'IT-' + p.prov;
+      const nomi = [a.city, a.town, a.village, a.municipality, a.hamlet, a.suburb, a.quarter, a.neighbourhood, a.isolated_dwelling, a.county];
+      const capOk = !p.cap || !a.postcode || String(a.postcode).slice(0, 3) === p.cap.slice(0, 3);
+      return provOk && capOk && stessoPosto(nomi, p.localita);
+    });
+  };
+  const comune = p.localita || '';
+  const via = viaPerRicerca(p.via);
+  const senzaNumero = via.replace(/\s\d+\S*$/, '').trim();
+  let x = null;
+  if (via && (comune || p.cap)) x = await prova({ street: via, city: comune, postalcode: p.cap });
+  if (!x && senzaNumero && senzaNumero !== via && (comune || p.cap)) {
+    x = await prova({ street: senzaNumero, city: comune, postalcode: p.cap });
+    if (x) return { lat: Number(x.lat), lon: Number(x.lon), nome: x.display_name, precisione: 'via' };
+  }
+  if (x) return { lat: Number(x.lat), lon: Number(x.lon), nome: x.display_name, precisione: 'indirizzo' };
+  if (!comune && !p.cap) return null;
+  x = await prova(comune ? { city: comune, postalcode: p.cap } : { postalcode: p.cap });
+  if (!x && comune) x = await prova({ q: comune + (p.prov ? ' ' + p.prov : '') });
+  return x ? { lat: Number(x.lat), lon: Number(x.lon), nome: x.display_name, precisione: 'comune' } : null;
+}
+
+async function trovaOrs(p) {
+  const prova = async (parametri, livelli) => {
+    const u = new URL('https://api.openrouteservice.org/geocode/search/structured');
+    u.searchParams.set('api_key', ORS());
+    u.searchParams.set('country', 'IT');
+    u.searchParams.set('size', '8');
+    u.searchParams.set('layers', livelli);
+    Object.entries(parametri).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
+    const d = await chiedi(u);
+    return (d.features || []).find((f) => {
+      const q = f.properties || {};
+      const sigle = [q.region_a, q.county_a, q.macrocounty_a].filter(Boolean).map((s) => String(s).toUpperCase());
+      const provOk = !p.prov || !sigle.length || sigle.includes(p.prov);
+      return provOk && stessoPosto([q.locality, q.localadmin, q.county, q.borough, q.neighbourhood, q.name], p.localita);
+    });
+  };
+  const via = viaPerRicerca(p.via);
+  let f = null;
+  if (via && (p.localita || p.cap)) f = await prova({ address: via, locality: p.localita, postalcode: p.cap }, 'address,street');
+  const risultato = (x, precisione) => ({ lat: x.geometry.coordinates[1], lon: x.geometry.coordinates[0], nome: x.properties.label, precisione });
+  if (f) return risultato(f, f.properties.layer === 'street' ? 'via' : 'indirizzo');
+  if (!p.localita && !p.cap) return null;
+  f = await prova({ locality: p.localita, postalcode: p.cap }, 'locality,localadmin,neighbourhood,postalcode');
+  return f ? risultato(f, 'comune') : null;
+}
+
+r.get('/trova', async (req, res) => {
+  const pulito = (v, n) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const p = {
+    via: pulito(req.query.via, 200), localita: pulito(req.query.localita, 100),
+    prov: /^[A-Za-z]{2}$/.test(pulito(req.query.prov, 2)) ? pulito(req.query.prov, 2).toUpperCase() : '',
+    cap: /^\d{5}$/.test(pulito(req.query.cap, 5)) ? pulito(req.query.cap, 5) : '',
+  };
+  if (!p.via && !p.localita && !p.cap) return res.status(400).json({ errore: 'Indirizzo mancante.' });
+  const chiave = 't:' + (ORS() ? 'o:' : 'n:') + JSON.stringify(p).toLowerCase();
+  if (memoria.has(chiave)) return res.json(memoria.get(chiave));
+  try {
+    res.json(ricorda(chiave, (ORS() ? await trovaOrs(p) : await trovaNominatim(p)) || null));
+  } catch (e) {
+    console.error('Ricerca tappa:', e.message);
+    res.status(502).json({ errore: 'Ricerca indirizzi non disponibile in questo momento. Riprova tra poco.' });
+  }
+});
+
 r.get('/stato', (req, res) => {
   res.json({ camion: !!ORS(), autocompletamento: !!ORS() });
 });

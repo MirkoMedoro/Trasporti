@@ -141,6 +141,25 @@
     return out;
   }
 
+  // Divide "VIA STROZZI, 83, MONTEMURLO PO" in via / CAP / località / provincia, per cercare
+  // l'indirizzo solo dentro il comune giusto
+  function dividiIndirizzo(testo) {
+    var t = String(testo || '').replace(/\s+/g, ' ').trim(), via = t, fine = '';
+    var capM = t.match(/^(.*?)[,\s]+(\d{5})\s+(.+)$/);
+    if (capM) { via = capM[1]; fine = capM[2] + ' ' + capM[3]; }
+    else {
+      var pezzi = t.split(',');
+      if (pezzi.length < 2) return { via: t, cap: '', localita: '', prov: '' };
+      fine = pezzi.pop(); via = pezzi.join(',');
+    }
+    var m = fine.trim().replace(/[.;:]+$/, '').match(/^(?:(\d{5})\s+)?(.+?)(?:\s+\(?([A-Za-z]{2})\)?)?$/);
+    if (!m) return { via: t, cap: '', localita: '', prov: '' };
+    var loc = m[2].replace(/[()]/g, '').trim(), prov = m[3] ? m[3].toUpperCase() : '';
+    // "ALTO ADIGE" o "SAN PO" non sono province: la sigla deve essere preceduta da una parola intera
+    if (prov && !/[A-Za-zÀ-ú]{2,}/.test(loc)) { loc = loc + ' ' + prov; prov = ''; }
+    return { via: via.trim().replace(/[,\s]+$/, ''), cap: m[1] || '', localita: loc, prov: prov };
+  }
+
   // ---------- 2. Riconoscimento delle tappe ----------
   var RE_VIA = /\b(via|viale|v\.le|piazza|p\.zza|p\.za|piazzale|p\.le|corso|c\.so|largo|strada|str\.|localit[aà]|loc\.|frazione|fraz\.|vicolo|borgo|lungarno|zona industriale|z\.\s?i\.|contrada|c\.da|regione)\b/i;
   var RE_CAP = /\b(\d{5})\b/;
@@ -673,7 +692,7 @@
     };
   }
 
-  var api = { righeDaPdf: righeDaPdf, righeDaOcr: righeDaOcr, pulisciImmagine: pulisciImmagine, estraiTappe: estraiTappe, righeDaTesto: righeDaTesto, ottimizzaGiro: ottimizzaGiro, costo: costo, _esatto: esatto, _migliora: migliora, _ricerca: ricercaRipetuta, _valida: valida };
+  var api = { dividiIndirizzo: dividiIndirizzo, righeDaPdf: righeDaPdf, righeDaOcr: righeDaOcr, pulisciImmagine: pulisciImmagine, estraiTappe: estraiTappe, righeDaTesto: righeDaTesto, ottimizzaGiro: ottimizzaGiro, costo: costo, _esatto: esatto, _migliora: migliora, _ricerca: ricercaRipetuta, _valida: valida };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else globale.Giro = api;
 })(this);

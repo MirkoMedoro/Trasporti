@@ -1790,6 +1790,15 @@
   }
   // Cerca un indirizzo; se non lo trova prova con CAP e località (posizione approssimata)
   function trovaIndirizzo(testo) {
+    // con comune (o CAP) si cerca solo dentro quel comune: mai una via omonima in un'altra città
+    var parti = window.Giro.dividiIndirizzo(testo);
+    if (parti.localita || parti.cap) {
+      return api('GET', '/api/percorsi/trova?via=' + encodeURIComponent(parti.via) + '&localita=' + encodeURIComponent(parti.localita) +
+        '&prov=' + encodeURIComponent(parti.prov) + '&cap=' + encodeURIComponent(parti.cap)).then(function (x) {
+        if (!x) return null;
+        return { lat: x.lat, lon: x.lon, nome: x.nome, trovato: x.precisione === 'comune' ? 'comune' : 'si' };
+      });
+    }
     return api('GET', '/api/percorsi/cerca?paese=it&solo=indirizzo&q=' + encodeURIComponent(testo)).then(function (r) {
       if (r.length) return { lat: r[0].lat, lon: r[0].lon, nome: r[0].nome, trovato: 'si' };
       var m = String(testo).match(/\b\d{5}\b[^,]*/);

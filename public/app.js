@@ -20,6 +20,7 @@
     viaggi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 18h7a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7"/></svg>',
     scadenze: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/></svg>',
     backup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6M4.5 11.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg>',
+    tassato: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 8h10l2.5 12h-15z"/><path d="M9.5 8a2.5 2.5 0 0 1 5 0"/><path d="M9 14h6M12 11.5v5"/></svg>',
     account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.2-7 8-7s7 2.5 8 7"/></svg>'
   };
 
@@ -136,6 +137,7 @@
     if (r === 'superadmin') return [['aziende', 'Aziende clienti'], ['backup', 'Backup'], ['account', 'Il mio account']];
     var v = [['home', 'Home']];
     if (haFunzione('carico')) v.push(['carico', 'Piano di carico']);
+    if (haFunzione('tassato')) v.push(['tassato', 'Peso tassato']);
     if (haFunzione('viaggi')) v.push(['viaggi', 'Viaggi e costi']);
     v.push(['mezzi', 'Mezzi']);
     if (haFunzione('scadenze')) v.push(['scadenze', 'Scadenze']);
@@ -172,6 +174,7 @@
   function vistaHome() {
     var tessere = [];
     if (haFunzione('carico')) tessere.push(['carico', 'Piano di carico', 'Inserisci i colli e ottieni la disposizione migliore.']);
+    if (haFunzione('tassato')) tessere.push(['tassato', 'Peso tassato', 'Peso reale, volume, peso tassato e prezzo di una spedizione in pochi secondi.']);
     if (haFunzione('viaggi')) tessere.push(['viaggi', 'Viaggi e costi', 'Km del percorso, costo del viaggio e prezzo di pareggio.']);
     tessere.push(['mezzi', 'Mezzi', 'La flotta con misure, portata, revisione e complessi veicolari.']);
     if (haFunzione('scadenze')) tessere.push(['scadenze', 'Scadenze', 'Le revisioni in arrivo di tutti i mezzi.']);
@@ -644,6 +647,8 @@
 
       // "Quale mezzo basta?": prova il carico su tutta la flotta
       main.querySelector('#quale-mezzo').onclick = function () {
+        var automatico = !!stato.piano.automatico;
+        stato.piano.automatico = false;
         var righe = controllaRighe(); if (!righe) return;
         var btn = this, box = main.querySelector('#consiglio');
         btn.disabled = true; btn.textContent = 'Provo tutti i mezzi…';
@@ -691,9 +696,12 @@
           box.querySelectorAll('[data-usa]').forEach(function (b) {
             b.onclick = function () { selMezzo.value = b.dataset.usa; aggiornaMisure(); calcola(); };
           });
+          // Arrivando dal peso tassato: si calcola subito il carico sul mezzo consigliato
+          if (automatico && migliore) { selMezzo.value = migliore.u.chiave; aggiornaMisure(); calcola(); return; }
           box.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       };
+      if (p.automatico) main.querySelector('#quale-mezzo').click();
     }).catch(errorePagina);
   }
 
@@ -1274,6 +1282,290 @@
     }).catch(errorePagina);
   }
 
+  // ---------- Peso tassato (calcolo rapido per il prezzo) ----------
+  // Semirimorchio standard su cui si misurano i metri lineari
+  var VANO_LDM = { nome: 'Semirimorchio standard', lunghezza: 1360, larghezza: 248, altezza: 270, portata: Infinity };
+  var RIGHE_RAPIDE = {
+    eur: { nome: 'Bancale EUR', l: 120, p: 80, h: '', peso: '', n: 1, impilabile: false },
+    ind: { nome: 'Bancale 120×100', l: 120, p: 100, h: '', peso: '', n: 1, impilabile: false },
+    collo: { nome: 'Collo', l: '', p: '', h: '', peso: '', n: 1, impilabile: true }
+  };
+
+  function nuovoTassato(salvate) {
+    var s = salvate || {};
+    return {
+      righe: [Object.assign({}, RIGHE_RAPIDE.eur)],
+      modoPeso: 'collo',
+      rapporto: s.rapporto || 250,
+      modoTariffa: s.modoTariffa || 'kg',
+      tariffa: s.tariffa != null ? s.tariffa : '',
+      minimo: s.minimo != null ? s.minimo : ''
+    };
+  }
+
+  // Tutti i calcoli del modulo, in un posto solo
+  function calcolaTassato(t) {
+    var rapporto = numero(t.rapporto) || 250;
+    var tot = { colli: 0, reale: 0, volume: 0, incomplete: 0 };
+    var righe = t.righe.map(function (r) {
+      var n = Math.floor(numero(r.n)), l = numero(r.l), p = numero(r.p), h = numero(r.h), peso = numero(r.peso);
+      var completa = n > 0 && l > 0 && p > 0 && h > 0 && peso >= 0 && String(r.peso).trim() !== '';
+      var vol = n > 0 && l > 0 && p > 0 && h > 0 ? n * l * p * h / 1e6 : 0;
+      var reale = n > 0 ? (t.modoPeso === 'totale' ? peso : peso * n) : 0;
+      var pesoCollo = n > 0 ? (t.modoPeso === 'totale' ? peso / n : peso) : 0;
+      if (!completa && (r.l !== '' || r.p !== '' || r.h !== '' || r.peso !== '')) tot.incomplete++;
+      if (n > 0) tot.colli += n;
+      tot.reale += reale; tot.volume += vol;
+      return { completa: completa, volume: vol, reale: reale, volumetrico: vol * rapporto, pesoCollo: pesoCollo, n: n, l: l, p: p, h: h };
+    });
+    var volumetrico = tot.volume * rapporto;
+    var tassato = Math.ceil(Math.max(tot.reale, volumetrico) - 1e-9);
+    return {
+      righe: righe, colli: tot.colli, incomplete: tot.incomplete, rapporto: rapporto,
+      reale: tot.reale, volume: tot.volume, volumetrico: volumetrico, tassato: tassato,
+      sulVolume: volumetrico > tot.reale
+    };
+  }
+
+  // Righe nel formato del piano di carico
+  function righePerCarico(t, c) {
+    var out = [];
+    t.righe.forEach(function (r, i) {
+      var x = c.righe[i];
+      if (!x.completa) return;
+      out.push({
+        nome: r.nome || 'Collo', lunghezza: x.l, larghezza: x.p, altezza: x.h,
+        peso: Math.round(x.pesoCollo * 10) / 10, quantita: x.n, impilabile: !!r.impilabile, ruotabile: true
+      });
+    });
+    return out;
+  }
+
+  function vistaTassato() {
+    var admin = stato.utente.ruolo === 'admin';
+    api('GET', '/api/impostazioni/tassato').catch(function () { return null; }).then(function (salvate) {
+      if (!stato.tassato) stato.tassato = nuovoTassato(salvate);
+      var t = stato.tassato;
+
+      var main = guscio('tassato',
+        '<div class="testata"><div><h1>Peso tassato</h1><p>Inserisci i colli della spedizione: il programma calcola peso reale, volume, peso tassato e metri lineari, e ti propone il prezzo.</p></div>' +
+        '<div class="riga-azioni"><button class="btn" id="t-nuovo">Nuovo calcolo</button></div></div>' +
+        '<div class="tassato-cruscotto" id="t-cruscotto"></div>' +
+        '<section class="pannello">' +
+          '<div class="tassato-regole">' +
+            '<label class="campo">1 m³ equivale a<span class="con-unita"><input type="number" min="1" step="1" id="t-rapporto" value="' + esc(t.rapporto) + '"><span>kg</span></span></label>' +
+            '<label class="campo">Il peso che inserisci è<select id="t-modopeso"><option value="collo"' + (t.modoPeso === 'collo' ? ' selected' : '') + '>per singolo collo</option><option value="totale"' + (t.modoPeso === 'totale' ? ' selected' : '') + '>totale della riga</option></select></label>' +
+          '</div>' +
+          '<div class="tabella-scroll"><table class="tab-colli tab-tassato"><thead><tr>' +
+            '<th>Descrizione</th><th class="num">Colli</th><th class="num">Lungh. cm</th><th class="num">Largh. cm</th><th class="num">Alt. cm</th>' +
+            '<th class="num" id="t-intest-peso"></th><th title="Si possono appoggiare altri colli sopra">Impilabile</th>' +
+            '<th class="num calcolato">Volume m³</th><th class="num calcolato">Peso reale</th><th class="num calcolato">Peso volum.</th><th></th>' +
+          '</tr></thead><tbody id="t-righe"></tbody></table></div>' +
+          '<div class="aggiungi-colli">' +
+            '<button class="btn btn-piccolo" data-rapida="eur">Aggiungi bancale EUR 120×80</button>' +
+            '<button class="btn btn-piccolo" data-rapida="ind">Aggiungi bancale 120×100</button>' +
+            '<button class="btn btn-piccolo" data-rapida="collo">Aggiungi collo</button>' +
+            '<span class="nota">Invio sull’ultimo campo aggiunge una riga.</span>' +
+          '</div>' +
+        '</section>' +
+        '<section class="pannello">' +
+          '<h2>Prezzo</h2>' +
+          '<div class="griglia-form" style="margin-top:14px">' +
+            '<label class="campo">Tariffa<select id="t-modotariffa"><option value="kg"' + (t.modoTariffa === 'kg' ? ' selected' : '') + '>€ ogni 100 kg tassati</option><option value="ldm"' + (t.modoTariffa === 'ldm' ? ' selected' : '') + '>€ per metro lineare</option></select></label>' +
+            '<label class="campo">Importo tariffa (€)<input type="number" min="0" step="0.01" id="t-tariffa" value="' + esc(t.tariffa) + '"></label>' +
+            '<label class="campo">Prezzo minimo (€)<input type="number" min="0" step="0.01" id="t-minimo" value="' + esc(t.minimo) + '"></label>' +
+          '</div>' +
+          '<div id="t-prezzo" class="t-prezzo"></div>' +
+          (admin ? '<button class="btn btn-piccolo" id="t-predefiniti" style="margin-top:14px">Usa rapporto e tariffa come predefiniti</button>' : '') +
+        '</section>' +
+        '<div class="barra-calcolo tassato-azioni">' +
+          '<button class="btn" id="t-copia">Copia riepilogo</button>' +
+          (haFunzione('carico') ? '<button class="btn btn-primario" id="t-carico">Mostra sul piano di carico</button>' : '') +
+        '</div>' +
+        '<p class="errore" id="t-err"></p>');
+
+      var tbody = main.querySelector('#t-righe');
+      var ultimo = null, timerLdm = null, ldm = null;
+
+      function disegnaRighe() {
+        main.querySelector('#t-intest-peso').textContent = t.modoPeso === 'totale' ? 'Peso riga kg' : 'Peso collo kg';
+        tbody.innerHTML = t.righe.map(function (r, i) {
+          function cella(k, min, passo) {
+            return '<td class="num"><input type="number" min="' + min + '" step="' + (passo || 1) + '" data-k="' + k + '" value="' + esc(r[k]) + '"></td>';
+          }
+          return '<tr data-i="' + i + '">' +
+            '<td><input type="text" data-k="nome" value="' + esc(r.nome) + '" aria-label="Descrizione"></td>' +
+            cella('n', 1) + cella('l', 1) + cella('p', 1) + cella('h', 1) + cella('peso', 0, 0.1) +
+            '<td class="centro"><input type="checkbox" data-k="impilabile"' + (r.impilabile ? ' checked' : '') + ' aria-label="Impilabile"></td>' +
+            '<td class="num calcolato" data-c="volume"></td><td class="num calcolato" data-c="reale"></td><td class="num calcolato" data-c="volumetrico"></td>' +
+            '<td><button class="btn-testo pericolo" data-togli="' + i + '"' + (t.righe.length === 1 ? ' disabled' : '') + '>Togli</button></td></tr>';
+        }).join('');
+        aggiorna();
+      }
+
+      function aggiorna() {
+        var c = calcolaTassato(t);
+        ultimo = c;
+        // valori per riga
+        Array.prototype.forEach.call(tbody.children, function (tr, i) {
+          var x = c.righe[i];
+          tr.classList.toggle('incompleta', !x.completa && (t.righe[i].l !== '' || t.righe[i].peso !== ''));
+          tr.querySelector('[data-c=volume]').textContent = x.volume ? num(x.volume, 3) : '–';
+          tr.querySelector('[data-c=reale]').textContent = x.reale ? num(x.reale, 1) + ' kg' : '–';
+          var v = tr.querySelector('[data-c=volumetrico]');
+          v.textContent = x.volume ? num(x.volumetrico, 1) + ' kg' : '–';
+          v.classList.toggle('prevale', x.volume > 0 && x.volumetrico > x.reale);
+        });
+        // cruscotto in cima
+        main.querySelector('#t-cruscotto').innerHTML =
+          '<div><span class="desc">Colli</span><b>' + num(c.colli) + '</b></div>' +
+          '<div' + (!c.sulVolume && c.reale ? ' class="determina"' : '') + '><span class="desc">Peso reale</span><b>' + num(c.reale, 1) + ' kg</b></div>' +
+          '<div><span class="desc">Volume</span><b>' + num(c.volume, 3) + ' m³</b></div>' +
+          '<div' + (c.sulVolume ? ' class="determina"' : '') + '><span class="desc">Peso volumetrico <small>(×' + num(c.rapporto) + ')</small></span><b>' + num(c.volumetrico, 1) + ' kg</b></div>' +
+          '<div class="principale"><span class="desc">Peso tassato</span><b>' + num(c.tassato) + ' kg</b><small>' + (c.colli ? (c.sulVolume ? 'calcolato sul volume' : 'calcolato sul peso reale') : '') + '</small></div>' +
+          '<div id="t-ldm"><span class="desc">Metri lineari</span><b>' + (ldm ? ldm.testo : '–') + '</b><small>' + (ldm && ldm.nota ? ldm.nota : '') + '</small></div>';
+        aggiornaPrezzo();
+        pianificaLdm();
+      }
+
+      // I metri lineari si calcolano col vero algoritmo di carico: dopo una breve pausa di scrittura
+      function pianificaLdm() {
+        clearTimeout(timerLdm);
+        var box = main.querySelector('#t-ldm b');
+        if (box && ultimo.colli) box.classList.add('in-calcolo');
+        timerLdm = setTimeout(calcolaLdm, 450);
+      }
+      function calcolaLdm() {
+        var righe = righePerCarico(t, ultimo);
+        if (!righe.length) { ldm = null; mostraLdm(); return; }
+        try {
+          var r = window.Stiva.pianificaCarico(VANO_LDM, righe);
+          var st = r.statistiche;
+          ldm = st.colliCaricati < st.colliTotali
+            ? { metri: null, testo: 'oltre 13,60 m', nota: st.colliTotali - st.colliCaricati + ' colli non entrano in un bilico' }
+            : { metri: st.metriLineari, testo: num(st.metriLineari, 2) + ' m', nota: 'su un bilico da 2,48 m di larghezza' };
+        } catch (e) { ldm = { metri: null, testo: '–', nota: e.message }; }
+        mostraLdm();
+      }
+      function mostraLdm() {
+        var el = main.querySelector('#t-ldm');
+        if (!el) return;
+        el.innerHTML = '<span class="desc">Metri lineari</span><b>' + (ldm ? ldm.testo : '–') + '</b><small>' + (ldm && ldm.nota ? esc(ldm.nota) : '') + '</small>';
+        aggiornaPrezzo();
+      }
+
+      function aggiornaPrezzo() {
+        var box = main.querySelector('#t-prezzo'), c = ultimo;
+        var tariffa = numero(t.tariffa), minimo = numero(t.minimo);
+        if (!tariffa || !c.colli) { box.innerHTML = '<p class="nota">Inserisci la tariffa per vedere il prezzo.</p>'; t.prezzo = null; return; }
+        var base, spiega;
+        if (t.modoTariffa === 'ldm') {
+          if (!ldm || ldm.metri == null) { box.innerHTML = '<p class="nota">In attesa dei metri lineari…</p>'; t.prezzo = null; return; }
+          base = ldm.metri * tariffa;
+          spiega = num(ldm.metri, 2) + ' m × ' + euro(tariffa) + ' al metro';
+        } else {
+          base = c.tassato / 100 * tariffa;
+          spiega = num(c.tassato) + ' kg tassati × ' + euro(tariffa) + ' ogni 100 kg';
+        }
+        var prezzo = Math.max(base, minimo);
+        t.prezzo = prezzo;
+        box.innerHTML = '<div class="t-prezzo-riga"><span>' + spiega + ' = ' + euro(base) + (minimo && base < minimo ? '<br>Sotto il minimo: si applica il prezzo minimo di ' + euro(minimo) : '') + '</span>' +
+          '<b>' + euro(prezzo) + '</b></div>' +
+          '<p class="nota">Prezzo IVA esclusa. Pedaggi, supplementi e servizi accessori non sono compresi.</p>';
+      }
+
+      // --- eventi tabella ---
+      tbody.addEventListener('input', function (e) {
+        var k = e.target.dataset.k; if (!k) return;
+        var r = t.righe[Number(e.target.closest('tr').dataset.i)];
+        r[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+        aggiorna();
+      });
+      tbody.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' || !e.target.dataset.k) return;
+        e.preventDefault();
+        var tr = e.target.closest('tr'), campi = tr.querySelectorAll('input:not([type=checkbox])');
+        var pos = Array.prototype.indexOf.call(campi, e.target);
+        if (pos < campi.length - 1) { campi[pos + 1].focus(); campi[pos + 1].select(); return; }
+        // ultimo campo: nuova riga con le stesse caratteristiche
+        var r = t.righe[Number(tr.dataset.i)];
+        t.righe.push({ nome: r.nome, n: 1, l: '', p: '', h: '', peso: '', impilabile: r.impilabile });
+        disegnaRighe();
+        tbody.lastElementChild.querySelector('[data-k=n]').select();
+      });
+      tbody.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-togli]'); if (!b) return;
+        t.righe.splice(Number(b.dataset.togli), 1);
+        disegnaRighe();
+      });
+      main.querySelectorAll('[data-rapida]').forEach(function (b) {
+        b.onclick = function () {
+          t.righe.push(Object.assign({}, RIGHE_RAPIDE[b.dataset.rapida]));
+          disegnaRighe();
+          var tr = tbody.lastElementChild;
+          (tr.querySelector('[data-k=' + (b.dataset.rapida === 'collo' ? 'n' : 'h') + ']')).focus();
+        };
+      });
+
+      // --- regole e prezzo ---
+      main.querySelector('#t-rapporto').oninput = function () { t.rapporto = this.value; aggiorna(); };
+      main.querySelector('#t-modopeso').onchange = function () { t.modoPeso = this.value; disegnaRighe(); };
+      main.querySelector('#t-modotariffa').onchange = function () { t.modoTariffa = this.value; aggiornaPrezzo(); };
+      main.querySelector('#t-tariffa').oninput = function () { t.tariffa = this.value; aggiornaPrezzo(); };
+      main.querySelector('#t-minimo').oninput = function () { t.minimo = this.value; aggiornaPrezzo(); };
+      var pred = main.querySelector('#t-predefiniti');
+      if (pred) pred.onclick = function () {
+        api('PUT', '/api/impostazioni/tassato', { rapporto: numero(t.rapporto), modoTariffa: t.modoTariffa, tariffa: numero(t.tariffa), minimo: numero(t.minimo) })
+          .then(function () { avvisa('Valori predefiniti salvati per tutta l’azienda'); })
+          .catch(function (err) { avvisa(err.message); });
+      };
+      main.querySelector('#t-nuovo').onclick = function () {
+        var vecchio = t;
+        stato.tassato = nuovoTassato({ rapporto: vecchio.rapporto, modoTariffa: vecchio.modoTariffa, tariffa: vecchio.tariffa, minimo: vecchio.minimo });
+        ldm = null;
+        vistaTassato();
+      };
+
+      // --- riepilogo da incollare in un'email o in un messaggio ---
+      main.querySelector('#t-copia').onclick = function () {
+        var c = ultimo;
+        if (!c.colli) { main.querySelector('#t-err').textContent = 'Inserisci almeno un collo.'; return; }
+        var righe = t.righe.map(function (r, i) {
+          var x = c.righe[i];
+          if (!x.completa) return null;
+          return '- ' + x.n + ' × ' + (r.nome || 'collo') + ' ' + x.l + '×' + x.p + '×' + x.h + ' cm, ' + num(x.reale, 1) + ' kg';
+        }).filter(Boolean);
+        var testo = 'Spedizione: ' + num(c.colli) + ' colli\n' + righe.join('\n') + '\n' +
+          'Peso reale: ' + num(c.reale, 1) + ' kg\nVolume: ' + num(c.volume, 3) + ' m³\n' +
+          'Peso tassato: ' + num(c.tassato) + ' kg (1 m³ = ' + num(c.rapporto) + ' kg)\n' +
+          (ldm && ldm.metri != null ? 'Metri lineari: ' + num(ldm.metri, 2) + ' m\n' : '') +
+          (t.prezzo ? 'Prezzo: ' + euro(t.prezzo) + ' + IVA\n' : '');
+        var fatto = function () { avvisa('Riepilogo copiato: incollalo dove vuoi'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(testo).then(fatto, function () { mostraTesto(testo); });
+        else mostraTesto(testo);
+      };
+      function mostraTesto(testo) {
+        dialogo({ titolo: 'Riepilogo', pulsante: 'Chiudi', testo: '<textarea class="testo-copia" rows="9" readonly>' + esc(testo) + '</textarea><p>Seleziona il testo e copialo.</p>' });
+      }
+
+      // --- porta i colli sul piano di carico ---
+      var btnCarico = main.querySelector('#t-carico');
+      if (btnCarico) btnCarico.onclick = function () {
+        var err = main.querySelector('#t-err');
+        err.textContent = '';
+        var righe = righePerCarico(t, ultimo);
+        if (!righe.length) { err.textContent = 'Completa almeno una riga con colli, misure e peso.'; return; }
+        if (ultimo.incomplete) { err.textContent = 'Alcune righe sono incomplete (evidenziate): completale o toglile prima di proseguire.'; return; }
+        stato.piano.righe = righe;
+        stato.piano.risultato = null;
+        stato.piano.automatico = true;
+        location.hash = '#/carico';
+      };
+
+      disegnaRighe();
+    });
+  }
+
   // ---------- Scadenze (revisioni) ----------
   function vistaScadenze() {
     caricaMezzi().then(function (tutti) {
@@ -1651,6 +1943,7 @@
     switch (sez) {
       case 'carico': return haFunzione('carico') ? vistaCarico() : vistaHome();
       case 'viaggi': return haFunzione('viaggi') ? vistaViaggi(parti[1] ? Number(parti[1]) : null) : vistaHome();
+      case 'tassato': return haFunzione('tassato') ? vistaTassato() : vistaHome();
       case 'mezzi': return vistaMezzi();
       case 'scadenze': return haFunzione('scadenze') ? vistaScadenze() : vistaHome();
       case 'piani': return !haFunzione('carico') ? vistaHome() : (parti[1] ? vistaPiano(Number(parti[1])) : vistaPiani());

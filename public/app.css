@@ -289,3 +289,36 @@ tr.riga-scelta td { background: #fff8e0; }
 .anteprima-backup h3 { margin-bottom: 4px; }
 .confronto { margin-top: 12px; max-width: 460px; }
 .confronto td.in-meno { color: var(--rosso); font-weight: 600; }
+
+/* Peso tassato */
+.tassato-cruscotto { display: grid; grid-template-columns: repeat(6, 1fr); border: 1px solid var(--inchiostro); border-radius: 4px; margin-bottom: 22px; background: var(--bianco); position: sticky; top: 0; z-index: 5; }
+.tassato-cruscotto > div { padding: 12px 16px; border-right: 1px solid var(--linea); display: flex; flex-direction: column; min-width: 0; }
+.tassato-cruscotto > div:last-child { border-right: 0; }
+.tassato-cruscotto .desc { font-size: 13px; color: var(--grigio); }
+.tassato-cruscotto .desc small { font-size: 12px; }
+.tassato-cruscotto b { font-family: var(--titoli); font-size: 26px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tassato-cruscotto > div > small { font-size: 12px; color: var(--grigio); line-height: 1.3; }
+.tassato-cruscotto .principale { background: var(--giallo); }
+.tassato-cruscotto .principale b { font-size: 32px; }
+.tassato-cruscotto .principale .desc, .tassato-cruscotto .principale small { color: var(--nero); }
+.tassato-cruscotto .determina b { text-decoration: underline; text-decoration-color: var(--giallo); text-decoration-thickness: 4px; text-underline-offset: 4px; }
+.tassato-cruscotto b.in-calcolo { opacity: .35; }
+.tassato-regole { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.tassato-regole .campo { min-width: 200px; }
+.con-unita { display: flex; align-items: center; gap: 8px; }
+.con-unita input { max-width: 110px; }
+.con-unita span { color: var(--inchiostro); font-weight: 600; }
+.tab-tassato td.calcolato, .tab-tassato th.calcolato { background: var(--fondo); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tab-tassato td.calcolato.prevale { font-weight: 600; color: var(--inchiostro); }
+.tab-tassato input[type=number] { width: 72px; }
+.tab-tassato tr.incompleta td { background: #fff8e0; }
+.tab-tassato .btn-testo:disabled { opacity: .3; cursor: default; }
+.t-prezzo { margin-top: 16px; }
+.t-prezzo-riga { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 16px; border: 1px solid var(--inchiostro); border-left: 6px solid var(--giallo); border-radius: 4px; flex-wrap: wrap; }
+.t-prezzo-riga span { color: var(--grigio); }
+.t-prezzo-riga b { font-family: var(--titoli); font-size: 32px; font-weight: 600; }
+.t-prezzo .nota { margin-top: 8px; }
+.tassato-azioni { justify-content: flex-end; border-top: 0; padding-top: 0; }
+.testo-copia { width: 100%; font: 13px/1.5 var(--testo); padding: 10px; border: 1px solid var(--linea); border-radius: 3px; resize: vertical; }
+@media (max-width: 1100px) { .tassato-cruscotto { grid-template-columns: repeat(3, 1fr); position: static; } .tassato-cruscotto > div { border-bottom: 1px solid var(--linea); } }
+@media (max-width: 560px) { .tassato-cruscotto { grid-template-columns: repeat(2, 1fr); } }

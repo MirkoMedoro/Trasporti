@@ -39,13 +39,18 @@
 
   function sovrappone(a1, a2, b1, b2) { return a1 < b2 && b1 < a2; }
 
-  function pianificaCarico(mezzo, righe) {
+  /*
+   * Un singolo calcolo con una "preferenza di verso" per ogni tipo di collo:
+   *   pref[tipo] = numero di colli di quel tipo da mettere "di punta"
+   *   (lato lungo nel senso della lunghezza del vano); gli altri vanno "di traverso".
+   *   0 = tutti di traverso, Infinity = tutti di punta.
+   * Se il verso preferito non entra in un punto, si usa l'altro.
+   */
+  function calcolaConPreferenza(mezzo, righe, pref) {
     var L = Number(mezzo.lunghezza), W = Number(mezzo.larghezza), H = Number(mezzo.altezza);
     var portata = Number(mezzo.portata) || Infinity;
     var colli = espandiColli(righe);
-    if (colli.length > MAX_COLLI) {
-      throw new Error('Troppi colli in un solo calcolo (massimo ' + MAX_COLLI + ').');
-    }
+    var giaDiPunta = {};
 
     // Ordine di carico: prima gli impilabili (fanno da base), poi base più
     // grande, poi più pesanti (i pesanti restano in basso).
@@ -127,17 +132,18 @@
 
       var orient = [[collo.l, collo.w]];
       if (collo.ruotabile && collo.l !== collo.w) orient.push([collo.w, collo.l]);
+      var diPunta = (giaDiPunta[collo.tipo] || 0) < (pref[collo.tipo] || 0);
 
       var scelta = null;
       for (var p = 0; p < punti.length && !scelta; p++) {
         var pt = punti[p], k = chiave(pt);
         if (puntiFalliti[k]) continue;
-        // Scegli l'orientamento che occupa meno lunghezza del vano
+        // Verso preferito: di punta (più lunghezza) o di traverso (meno lunghezza)
         var migliore = null;
         for (var o = 0; o < orient.length; o++) {
           var ol = orient[o][0], ow = orient[o][1];
           if (entra(pt.x, pt.y, pt.z, ol, ow, collo.h)) {
-            if (!migliore || ol < migliore.l) migliore = { l: ol, w: ow };
+            if (!migliore || (diPunta ? ol > migliore.l : ol < migliore.l)) migliore = { l: ol, w: ow };
           }
         }
         if (migliore) scelta = { x: pt.x, y: pt.y, z: pt.z, l: migliore.l, w: migliore.w, indice: p };
@@ -156,6 +162,7 @@
       };
       piazzati.push(nuovo);
       pesoTotale += collo.peso;
+      if (nuovo.l >= nuovo.w && collo.l !== collo.w) giaDiPunta[collo.tipo] = (giaDiPunta[collo.tipo] || 0) + 1;
       punti.splice(scelta.indice, 1);
 
       var candidati = [
@@ -210,6 +217,70 @@
         baricentro: pesoTotale > 0 ? Math.round(momento / pesoTotale) : null
       }
     };
+  }
+
+  /*
+   * Prova più disposizioni e tiene la migliore:
+   * più colli caricati, poi meno metri lineari, poi baricentro più vicino al centro.
+   * Esempio: 9 bancali 80×120 non impilabili su un bilico
+   *   di traverso: 2 per fila, 5 file = 4,00 m
+   *   di punta:    3 per fila, 3 file = 3,60 m   <- scelta
+   * e con 11 bancali la soluzione mista (3 file di punta + 1 di traverso) = 4,40 m.
+   */
+  function migliore(a, b) {
+    var sa = a.statistiche, sb = b.statistiche;
+    if (sa.colliCaricati !== sb.colliCaricati) return sa.colliCaricati > sb.colliCaricati ? a : b;
+    if (Math.abs(sa.metriLineari - sb.metriLineari) > 0.001) return sa.metriLineari < sb.metriLineari ? a : b;
+    return a;
+  }
+
+  function pianificaCarico(mezzo, righe) {
+    var colli = espandiColli(righe);
+    if (colli.length > MAX_COLLI) {
+      throw new Error('Troppi colli in un solo calcolo (massimo ' + MAX_COLLI + ').');
+    }
+    var W = Number(mezzo.larghezza);
+    var tipi = righe.map(function (r, i) {
+      var q = Math.max(0, Math.floor(Number(r.quantita) || 0));
+      var l = Number(r.lunghezza), w = Number(r.larghezza);
+      var girabile = r.ruotabile !== false && l !== w && q > 0;
+      // quanti ne stanno affiancati in larghezza, di punta
+      var perFila = Math.max(1, Math.floor(W / Math.min(l, w)));
+      return { i: i, q: q, girabile: girabile, perFila: perFila };
+    });
+    var girabili = tipi.filter(function (t) { return t.girabile; });
+    var nessuno = righe.map(function () { return 0; });
+    var tutti = righe.map(function () { return Infinity; });
+
+    var best = calcolaConPreferenza(mezzo, righe, nessuno);
+    if (!girabili.length) return best;
+
+    // Limite di tempo: le prove si fermano dopo circa un secondo e mezzo
+    // (la prima e la seconda disposizione vengono sempre provate)
+    var inizio = Date.now(), prove = 1;
+    function prova(pref) {
+      if (prove >= 2 && Date.now() - inizio > 1500) return false;
+      if (prove >= 60) return false;
+      prove++;
+      var r = calcolaConPreferenza(mezzo, righe, pref);
+      var b = migliore(best, r);
+      if (b !== best) { best = r; bestPref = pref.slice(); return true; }
+      return false;
+    }
+    var bestPref = nessuno.slice();
+    prova(tutti);
+
+    // Per ogni tipo: prova a mettere di punta solo le prime N file
+    girabili.forEach(function (t) {
+      for (var file = 1; file * t.perFila < t.q; file++) {
+        var pref = bestPref.slice();
+        pref[t.i] = file * t.perFila;
+        prova(pref);
+      }
+      var p0 = bestPref.slice(); p0[t.i] = 0; prova(p0);
+      var p1 = bestPref.slice(); p1[t.i] = Infinity; prova(p1);
+    });
+    return best;
   }
 
   var api = { pianificaCarico: pianificaCarico, MAX_COLLI: MAX_COLLI };

@@ -450,3 +450,4 @@ tr.riga-deposito td { background: var(--fondo); }
 .tab-giro input[data-k=nome] { width: 220px; }
 .tab-giro input[data-k=note] { width: 220px; }
 .tab-giro input[data-k=peso] { width: 84px; }
+.avviso-ocr { color: var(--giallo-scuro); font-weight: 600; }

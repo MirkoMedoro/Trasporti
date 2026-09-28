@@ -45,6 +45,102 @@
     }, Promise.resolve([]));
   }
 
+  // Righe dal testo riconosciuto in una scansione o foto (lettura gratuita nel browser).
+  // parole: [{testo, x0, y0, x1, y1}] in pixel; scala: pixel per punto PDF.
+  // Restituisce righe nello stesso formato di righeDaPdf, così vale la stessa lettura della tabella.
+  function righeDaOcr(parole, scala, pagina) {
+    scala = scala || 1;
+    var ps = parole.filter(function (w) {
+      var t = w && String(w.testo || '').trim();
+      if (!t) return false;
+      // resti delle righe della tabella e sporco: segni brevi letti con poca sicurezza
+      if (t.length <= 2 && w.conf != null && w.conf < 60 && !/^\d+$/.test(t)) return false;
+      if (/^[|!il'‘’"“”°*.,:;_\-=\[\]]+$/i.test(t) && t.length <= 2) return false;
+      return true;
+    }).map(function (w) {
+      return { testo: String(w.testo).trim(), x0: w.x0 / scala, x1: w.x1 / scala, y0: w.y0 / scala, y1: w.y1 / scala,
+        yc: (w.y0 + w.y1) / 2 / scala, h: Math.max(1, (w.y1 - w.y0) / scala) };
+    });
+    if (!ps.length) return [];
+    var altezze = ps.map(function (w) { return w.h; }).sort(function (a, b) { return a - b; });
+    var hTipica = altezze[Math.floor(altezze.length / 2)];
+    ps.sort(function (a, b) { return a.yc - b.yc; });
+    var righe = [];
+    ps.forEach(function (w) {
+      var r = righe[righe.length - 1];
+      // stessa riga se il centro è vicino (tollera un foglio leggermente storto)
+      if (r && Math.abs(w.yc - r.yc) < hTipica * 0.55) { r.parole.push(w); r.yc = (r.yc * (r.parole.length - 1) + w.yc) / r.parole.length; }
+      else righe.push({ yc: w.yc, parole: [w] });
+    });
+    return righe.map(function (r) {
+      r.parole.sort(function (a, b) { return a.x0 - b.x0; });
+      var celle = [];
+      r.parole.forEach(function (w) {
+        var c = celle[celle.length - 1];
+        // parole vicine = stessa cella; uno spazio largo = colonna successiva
+        if (c && w.x0 - c.fine < hTipica * 0.9) { c.testo += ' ' + w.testo; c.fine = w.x1; c.parole.push({ x: w.x0, fine: w.x1, testo: w.testo }); }
+        else celle.push({ x: w.x0, fine: w.x1, testo: w.testo, parole: [{ x: w.x0, fine: w.x1, testo: w.testo }] });
+      });
+      celle = celle.map(function (c) { return { x: c.x, fine: c.fine, parole: c.parole, testo: c.testo.replace(/[|]/g, ' ').replace(/\s+/g, ' ').trim() }; })
+        .filter(function (c) { return c.testo && !/^[\-_=.,:;'"`~]+$/.test(c.testo); });
+      return { y: -r.yc, celle: celle, testo: celle.map(function (c) { return c.testo; }).join(' | '), pagina: pagina || 1 };
+    }).filter(function (r) { return r.celle.length; });
+  }
+
+  // Prepara l'immagine di una scansione per la lettura: bianco e nero netto, via le righe della
+  // tabella (confondono il riconoscimento) e i puntini di sporco. gray: un byte per pixel (0 = nero).
+  function pulisciImmagine(gray, w, h) {
+    var n = w * h, i, x, y;
+    // soglia automatica (metodo di Otsu)
+    var ist = new Array(256).fill(0);
+    for (i = 0; i < n; i++) ist[gray[i]]++;
+    var somma = 0; for (i = 0; i < 256; i++) somma += i * ist[i];
+    var sB = 0, wB = 0, migliore = 0, soglia = 128;
+    for (i = 0; i < 256; i++) {
+      wB += ist[i]; if (!wB) continue;
+      var wF = n - wB; if (!wF) break;
+      sB += i * ist[i];
+      var mB = sB / wB, mF = (somma - sB) / wF, v = wB * wF * (mB - mF) * (mB - mF);
+      if (v > migliore) { migliore = v; soglia = i; }
+    }
+    var nero = new Uint8Array(n);
+    for (i = 0; i < n; i++) nero[i] = gray[i] <= soglia ? 1 : 0;
+    // righe e colonne della tabella: tratti neri molto più lunghi di una lettera
+    var togli = new Uint8Array(n), minO = Math.max(40, Math.round(w * 0.035)), minV = Math.max(40, Math.round(h * 0.03));
+    for (y = 0; y < h; y++) {
+      var da = -1;
+      for (x = 0; x <= w; x++) {
+        var nr = x < w && nero[y * w + x];
+        if (nr && da < 0) da = x;
+        if (!nr && da >= 0) { if (x - da >= minO) for (var k = da; k < x; k++) togli[y * w + k] = 1; da = -1; }
+      }
+    }
+    for (x = 0; x < w; x++) {
+      var dv = -1;
+      for (y = 0; y <= h; y++) {
+        var nv = y < h && nero[y * w + x];
+        if (nv && dv < 0) dv = y;
+        if (!nv && dv >= 0) { if (y - dv >= minV) for (var q = dv; q < y; q++) togli[q * w + x] = 1; dv = -1; }
+      }
+    }
+    var out = new Uint8Array(n);
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        i = y * w + x;
+        if (!nero[i] || togli[i]) { out[i] = 255; continue; }
+        // puntino isolato: nessun vicino nero
+        var vicini = 0;
+        for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          var yy = y + dy, xx = x + dx;
+          if (yy >= 0 && yy < h && xx >= 0 && xx < w && nero[yy * w + xx] && !togli[yy * w + xx]) vicini++;
+        }
+        out[i] = vicini >= 1 ? 0 : 255;
+      }
+    }
+    return out;
+  }
+
   // ---------- 2. Riconoscimento delle tappe ----------
   var RE_VIA = /\b(via|viale|v\.le|piazza|p\.zza|p\.za|piazzale|p\.le|corso|c\.so|largo|strada|str\.|localit[aà]|loc\.|frazione|fraz\.|vicolo|borgo|lungarno|zona industriale|z\.\s?i\.|contrada|c\.da|regione)\b/i;
   var RE_CAP = /\b(\d{5})\b/;
@@ -67,11 +163,11 @@
     var n = parseFloat(t);
     return isFinite(n) ? n : '';
   }
-  function pulisci(s) { return String(s || '').replace(/\s*\|\s*/g, ' ').replace(/\s+/g, ' ').replace(/^[\s\-–,;:.]+|[\s\-–,;:]+$/g, '').trim(); }
+  function pulisci(s) { return String(s || '').replace(/\s*\|\s*/g, ' ').replace(/\s+/g, ' ').replace(/^[\s\-–,;:.'‘’"“”!]+|[\s\-–,;:'‘’"“”!]+$/g, '').trim(); }
 
   // Modalità tabella: c'è una riga di intestazione con Indirizzo e CAP/Località
   var COLONNE = {
-    tipo: /^(tipo|operazione|servizio|r\/c|attivit[aà])/i,
+    tipo: /^(tipo|operazione|servizio|r\s*[\/.]?\s*c$|attivit[aà])/i,
     nome: /^(cliente|ragione sociale|destinatario|mittente|nominativo|ditta|azienda|nome)/i,
     indirizzo: /^(indirizzo|via|luogo)/i,
     cap: /^cap$/i,
@@ -82,18 +178,61 @@
     peso: /^(peso|kg)/i,
     note: /^(note|annotazioni|orari?|osservazioni)/i
   };
+  // Nomi delle colonne per riconoscerli anche se letti male da una scansione ("DESTINATAR1O")
+  var NOMI_COLONNE = {
+    nome: ['CLIENTE', 'DESTINATARIO', 'MITTENTE', 'NOMINATIVO', 'MITTENTEDESTINATARIO', 'RAGIONESOCIALE'],
+    indirizzo: ['INDIRIZZO'], localita: ['LOCALITA', 'CITTA', 'COMUNE'], colli: ['COLLI', 'NCOLLI'],
+    pallet: ['PALLET', 'BANCALI'], note: ['NOTE', 'ANNOTAZIONI']
+  };
+  function distanza(a, b) {
+    var d = [], i, j;
+    for (i = 0; i <= a.length; i++) { d[i] = [i]; }
+    for (j = 1; j <= b.length; j++) d[0][j] = j;
+    for (i = 1; i <= a.length; i++) for (j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[a.length][b.length];
+  }
+  function colonnaSimile(t, usate) {
+    var lettere = t.toUpperCase().replace(/[ÀÁ]/g, 'A').replace(/[^A-Z0-9]/g, '');
+    if (/^R[I1L|]?C$/.test(lettere)) return usate.tipo ? null : 'tipo';   // R/C letto come "RIC"
+    if (lettere.length < 5) return null;
+    var migliore = null, dMin = Infinity;
+    Object.keys(NOMI_COLONNE).forEach(function (k) {
+      if (usate[k]) return;
+      NOMI_COLONNE[k].forEach(function (n) {
+        var d = distanza(lettere, n);
+        if (d <= Math.floor(n.length * 0.3) && d < dMin) { dMin = d; migliore = k; }
+      });
+    });
+    return migliore;
+  }
   function intestazione(r) {
     var usate = {}, colonne = [];
     r.celle.forEach(function (c) {
-      var k = Object.keys(COLONNE).filter(function (x) { return !usate[x] && COLONNE[x].test(c.testo.trim()); })[0];
+      // tolleranza per le letture da scansione: "[rc", "PR.", "INDIRIZZO|"
+      var t = c.testo.trim().replace(/^[\[\(|'‘"“]+|[\]\)|'’"”_]+$/g, '').trim();
+      var k = Object.keys(COLONNE).filter(function (x) { return !usate[x] && COLONNE[x].test(t); })[0] || colonnaSimile(t, usate);
       if (k) usate[k] = true;
-      colonne.push({ k: k || 'altro', x: c.x, fine: c.fine != null ? c.fine : c.x + c.testo.length * 5, testo: c.testo });
+      colonne.push({ k: k || 'altro', x: c.x, fine: c.fine != null ? c.fine : c.x + c.testo.length * 5, testo: c.testo, rcLetto: k === 'tipo' && /^[^A-Za-z]*R[^A-Za-z]{0,2}[I1l|]?[^A-Za-z]{0,2}C[^A-Za-z]*$/i.test(t) });
     });
+    // Località illeggibile: è la colonna subito dopo l'indirizzo
+    if (usate.indirizzo && !usate.localita && !usate.cap) {
+      var iInd = colonne.map(function (c) { return c.k; }).indexOf('indirizzo');
+      var dopo = colonne[iInd + 1];
+      if (dopo && dopo.k === 'altro' && /[A-Za-z]{2}/.test(dopo.testo) && (usate.nome || usate.peso || usate.colli)) { dopo.k = 'localita'; usate.localita = true; }
+    }
+    // Indirizzo illeggibile: è la colonna subito prima della località (dopo il nome)
+    if (!usate.indirizzo && usate.localita) {
+      var iLoc = colonne.map(function (c) { return c.k; }).indexOf('localita');
+      for (var q = iLoc - 1; q >= 0 && colonne[q].k !== 'nome'; q--) {
+        if (colonne[q].k === 'altro' && colonne[q].testo.replace(/[^A-Za-z]/g, '').length >= 4) { colonne[q].k = 'indirizzo'; usate.indirizzo = true; break; }
+      }
+    }
     var trovate = Object.keys(usate).length;
     if (!(usate.indirizzo && (usate.cap || usate.localita) && trovate >= 3)) return null;
     colonne.forEach(function (c) {
       if (c.k === 'nome') c.dueRighe = /mittente/i.test(c.testo) && /destinatario/i.test(c.testo);
-      if (c.k === 'tipo') c.rc = /^r\s*\/\s*c$/i.test(c.testo.trim());
+      if (c.k === 'tipo') c.rc = c.rcLetto || /^[\[\(|]?r\s*[\/.]?\s*c[\]\)|]?$/i.test(c.testo.trim());
     });
     return colonne;
   }
@@ -112,8 +251,9 @@
   }
   // Colonna R/C: "3" = consegna, "13 RIT" = ritiro
   function tipoDaColonna(testo, rc) {
-    var t = String(testo || '').trim();
-    if (/\bRIT\b|^R$/i.test(t)) return 'ritiro';
+    var t = String(testo || '').trim().replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '');
+    // da scansione "13 RIT" può diventare "I3RIT", "1RIT", "16RT"
+    if (/RIT\b|R[1l|]T\b|\dRT\b|^R$/i.test(t)) return 'ritiro';
     if (/\bCONS?\b|^C$/i.test(t)) return 'consegna';
     if (rc && /^\d+$/.test(t)) return 'consegna';
     return tipoDa(t);
@@ -130,11 +270,43 @@
         g.min = Math.min(g.min, c.x); g.fine = Math.max(g.fine, fine); g.n++;
       });
     }
+    // dati a sinistra di tutte le intestazioni (colonna senza titolo, o titolo non letto): colonna a parte
+    var primaX = Math.min.apply(null, colonne.map(function (h) { return h.x; }));
+    var sinistra = gruppi.filter(function (g) { return g.fine < primaX - 2; });
+    if (sinistra.reduce(function (a, g) { return a + g.n; }, 0) >= 3) {
+      var nuova = { k: 'altro', x: Math.min.apply(null, sinistra.map(function (g) { return g.min; })), fine: primaX - 2, testo: '' };
+      colonne.unshift(nuova);
+    }
     gruppi.forEach(function (g) { g.col = colonnaDi(colonne, { x: g.min, fine: g.fine, testo: '' }); });
-    return function (c) {
+    // posizioni isolate (tipico delle scansioni: un apice davanti al nome) seguono la colonna vicina più usata
+    gruppi.forEach(function (g) {
+      if (g.n > 2) return;
+      var vicino = gruppi.filter(function (x) { return x.n > 2 && Math.abs(x.x - g.x) <= 14; })
+        .sort(function (a, b) { return Math.abs(a.x - g.x) - Math.abs(b.x - g.x); })[0];
+      if (vicino) g.col = vicino.col;
+    });
+    var trova = function (c) {
       var g = gruppi.filter(function (x) { return Math.abs(x.x - c.x) <= 4; })[0];
       return g ? g.col : colonnaDi(colonne, c);
     };
+    // Inizi delle colonne vere (dove partono le celle di molte righe)
+    trova.inizi = gruppi.filter(function (g) { return g.n > 2; }).map(function (g) { return { x: g.x, col: g.col }; });
+    return trova;
+  }
+  // Una cella letta da scansione può "sbordare" nella colonna accanto (nome + indirizzo attaccati):
+  // si taglia solo dove una parola comincia esattamente all'inizio di un'altra colonna.
+  // Una via scritta dentro la casella del destinatario resta lì e non viene usata come indirizzo.
+  function dividiCella(c, colonnaCella) {
+    if (!c.parole || c.parole.length < 2) return [c];
+    var col = colonnaCella(c), pezzi = [{ col: col, parole: [] }];
+    c.parole.forEach(function (w, i) {
+      var inizio = i > 0 && colonnaCella.inizi.filter(function (b) { return b.col !== pezzi[pezzi.length - 1].col && Math.abs(b.x - w.x) <= 6 && b.x > c.x + 6; })[0];
+      if (inizio) pezzi.push({ col: inizio.col, parole: [] });
+      pezzi[pezzi.length - 1].parole.push(w);
+    });
+    return pezzi.map(function (p) {
+      return { x: p.parole[0].x, fine: p.parole[p.parole.length - 1].fine, testo: p.parole.map(function (w) { return w.testo; }).join(' '), col: p.col };
+    });
   }
 
   function daTabella(righe, i0, colonne) {
@@ -142,17 +314,33 @@
     var colonnaCella = colonneDati(righe, i0, colonne);
     var colTipo = colonne.filter(function (h) { return h.k === 'tipo'; })[0];
     var colNome = colonne.filter(function (h) { return h.k === 'nome'; })[0];
+    if (!colTipo) {
+      // intestazione R/C illeggibile: è la colonna con numeri e "RIT" ("3", "13 RIT")
+      var conta = new Map();
+      for (var z = i0 + 1; z < righe.length; z++) righe[z].celle.forEach(function (c) {
+        var h = colonnaCella(c), t = c.testo.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '');
+        if (h.k !== 'altro' || /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(c.testo)) return;
+        var e = conta.get(h) || { rit: 0, num: 0 }; conta.set(h, e);
+        if (/^\d{0,3}\s*R\W?[I1l]?T$/i.test(t)) e.rit++; else if (/^\d{1,3}$/.test(t)) e.num++;
+      });
+      var scelta = null;
+      conta.forEach(function (e, h) { if (e.rit >= 1 && e.rit + e.num >= 3 && (!scelta || e.rit + e.num > scelta.n)) scelta = { h: h, n: e.rit + e.num }; });
+      if (scelta) { scelta.h.k = 'tipo'; scelta.h.rc = true; colTipo = scelta.h; }
+    }
     for (var i = i0 + 1; i < righe.length; i++) {
       var r = righe[i];
       if (intestazione(r)) { ultima = null; continue; } // intestazione ripetuta su una nuova pagina
       var v = {}, chiavi = {};
-      r.celle.forEach(function (c) {
-        var h = colonnaCella(c);
-        v[h.k] = (v[h.k] ? v[h.k] + ' ' : '') + c.testo;
-        chiavi[h.k] = true;
+      r.celle.forEach(function (c0) {
+        dividiCella(c0, colonnaCella).forEach(function (c) {
+          var h = c.col || colonnaCella(c);
+          v[h.k] = (v[h.k] ? v[h.k] + ' ' : '') + c.testo;
+          chiavi[h.k] = true;
+        });
       });
       var soloNome = Object.keys(chiavi).every(function (k) { return k === 'nome' || k === 'note'; });
-      if (!v.indirizzo || !(v.localita || v.cap)) {
+      var tappaSenzaVia = !v.indirizzo && (v.localita || v.cap) && (v.tipo || /\d{1,2}\/?\d{2}\/?\d{2,4}/.test(r.testo));
+      if ((!v.indirizzo && !tappaSenzaVia) || !(v.localita || v.cap)) {
         // riga che continua la tappa precedente: note o secondo nome (destinatario)
         if (ultima && soloNome) {
           var testo = pulisci((v.nome || '') + ' ' + (v.note || ''));
@@ -168,21 +356,42 @@
         continue;
       }
       // con la colonna R/C, una tappa vera ha un numero in quella colonna
-      if (colTipo && colTipo.rc && !/\d/.test(v.tipo || '')) { ultima = null; continue; }
+      // con la colonna R/C, una tappa vera ha un numero in quella colonna (o almeno una data, se il numero non si legge)
+      if (colTipo && colTipo.rc && !/\d|R\W?[I1l]?T/i.test(v.tipo || '') && !/\d{1,2}\/?\d{2}\/?\d{2,4}|\d{6,8}/.test(r.testo)) { ultima = null; continue; }
+      // la località deve contenere lettere (esclude le righe dei totali)
+      if (!v.cap && !/[A-Za-zÀ-ú]{3}/.test(v.localita || '')) { ultima = null; continue; }
+
       var cap = (String(v.cap || '').match(RE_CAP) || [])[1] || (String(v.localita || '').match(RE_CAP) || [])[1] || '';
-      var loc = pulisci(String(v.localita || '').replace(RE_CAP, ''));
-      var prov = pulisci(v.prov || '');
+      var loc = pulisci(String(v.localita || '').replace(RE_CAP, '')), prov = pulisci(v.prov || '');
+      // lettura da scansione: nelle località e province le cifre in mezzo alle lettere sono lettere ("10LO" = IOLO)
+      if ((loc.match(/[A-Z]/g) || []).length >= (loc.match(/[a-z]/g) || []).length * 2) loc = loc.toUpperCase();
+      if (/[A-Za-z]{2}/.test(loc)) loc = loc.replace(/[0-9]/g, function (d) { return { 0: 'O', 1: 'I', 5: 'S', 8: 'B' }[d] || d; });
+      prov = prov.replace(/l/g, 'I').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase();
       ultima = {
         tipo: tipoDaColonna(v.tipo, colTipo && colTipo.rc) || tipoDa(r.testo),
         nome: pulisci(v.nome || ''),
         indirizzo: pulisci([v.indirizzo, [cap, loc].filter(Boolean).join(' ') + (prov ? ' ' + prov : '')].filter(Boolean).join(', ')),
         colli: numero((String(v.colli || '').match(/\d+/) || [])[0]),
         peso: numero((String(v.peso || '').match(/\d[\d.,]*/) || [])[0]),
+        pesoTesto: (String(v.peso || '').match(/\d[\d.,]*\d|\d/) || [''])[0],
         note: pulisci(v.note || ''),
         pallet: v.pallet
       };
       tappe.push(ultima);
     }
+    // Pesi scritti sempre con i decimali ("806.90"): se da scansione è sparito il punto ("33550"), lo rimette
+    var conDecimali = tappe.filter(function (t) { return /[.,]\d{2}$/.test(t.pesoTesto); }).length;
+    if (tappe.length >= 3 && conDecimali >= tappe.length * 0.3) {
+      tappe.forEach(function (t) { if (/^\d{5,}$/.test(t.pesoTesto)) t.peso = Number(t.pesoTesto) / 100; });
+    }
+    // Tipo illeggibile: se la tappa prima e quella dopo sono dello stesso tipo, è quello
+    tappe.forEach(function (t, k) {
+      if (t.tipo) return;
+      var prima = tappe[k - 1], dopo = tappe[k + 1];
+      if (prima && dopo && prima.tipo && prima.tipo === dopo.tipo) t.tipo = prima.tipo;
+      else if (!prima && dopo && dopo.tipo) t.tipo = dopo.tipo;
+      else if (prima && !dopo && prima.tipo) t.tipo = prima.tipo;
+    });
     // Consegne: la merce va al destinatario (seconda riga); il mittente resta nelle note
     return tappe.map(function (t) {
       var nome = t.nome, note = t.note;
@@ -190,6 +399,9 @@
         if (t.tipo === 'ritiro') note = pulisci('Per: ' + t.secondoNome + (note ? ' – ' + note : ''));
         else { nome = t.secondoNome; note = pulisci('Mitt.: ' + String(t.nome).replace(/([A-Za-z])\d{3,}$/, '$1') + (note ? ' – ' + note : '')); }
       }
+      // Un indirizzo scritto nella casella del destinatario/mittente non si usa per il giro: va nelle note
+      var viaNelNome = nome && String(nome).match(new RegExp('^(.*?\\S.*?)\\s+((?:' + RE_VIA.source + ').*\\d.*)$', 'i'));
+      if (viaNelNome) { nome = pulisci(viaNelNome[1]); note = pulisci((note ? note + ' – ' : '') + 'Altro indirizzo (non usato): ' + viaNelNome[2]); }
       var pallet = numero((String(t.pallet || '').match(/\d+/) || [])[0]);
       if (pallet) note = pulisci(pallet + (pallet === 1 ? ' pallet' : ' pallet') + (note ? ' – ' + note : ''));
       return { tipo: t.tipo, nome: nome, indirizzo: t.indirizzo, colli: t.colli, peso: t.peso, note: note };
@@ -267,10 +479,30 @@
     return pulisci(m[1] + ' ' + m[2] + (m[3] ? ' ' + m[3] : ''));
   }
 
+  // Due righe vicine lette come una (intestazione spezzata da un foglio fotografato storto)
+  function unisciRighe(a, b) {
+    var celle = a.celle.map(function (c) { return { x: c.x, fine: c.fine, testo: c.testo }; });
+    b.celle.forEach(function (c) {
+      var f = c.fine != null ? c.fine : c.x + c.testo.length * 5;
+      var sopra = celle.filter(function (d) { return Math.min(f, d.fine) - Math.max(c.x, d.x) > 0; })[0];
+      if (sopra) { sopra.testo += ' ' + c.testo; sopra.x = Math.min(sopra.x, c.x); sopra.fine = Math.max(sopra.fine, f); }
+      else celle.push({ x: c.x, fine: f, testo: c.testo });
+    });
+    celle.sort(function (p, q) { return p.x - q.x; });
+    return { y: b.y, celle: celle, testo: celle.map(function (c) { return c.testo; }).join(' | '), pagina: b.pagina };
+  }
   function estraiTappe(righe) {
     for (var i = 0; i < righe.length; i++) {
       var m = intestazione(righe[i]);
       if (m) { var t = daTabella(righe, i, m); if (t.length) return { tappe: t, modo: 'tabella' }; }
+    }
+    for (var j = 0; j + 1 < righe.length; j++) {
+      if (righe[j].pagina !== righe[j + 1].pagina || Math.abs(righe[j].y - righe[j + 1].y) > 12) continue;
+      var unita = unisciRighe(righe[j], righe[j + 1]), m2 = intestazione(unita);
+      if (m2) {
+        var copia = righe.slice(); copia[j + 1] = unita;
+        var t2 = daTabella(copia, j + 1, m2); if (t2.length) return { tappe: t2, modo: 'tabella' };
+      }
     }
     return { tappe: daBlocchi(righe), modo: 'blocchi' };
   }
@@ -441,7 +673,7 @@
     };
   }
 
-  var api = { righeDaPdf: righeDaPdf, estraiTappe: estraiTappe, righeDaTesto: righeDaTesto, ottimizzaGiro: ottimizzaGiro, costo: costo, _esatto: esatto, _migliora: migliora, _ricerca: ricercaRipetuta, _valida: valida };
+  var api = { righeDaPdf: righeDaPdf, righeDaOcr: righeDaOcr, pulisciImmagine: pulisciImmagine, estraiTappe: estraiTappe, righeDaTesto: righeDaTesto, ottimizzaGiro: ottimizzaGiro, costo: costo, _esatto: esatto, _migliora: migliora, _ricerca: ricercaRipetuta, _valida: valida };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else globale.Giro = api;
 })(this);

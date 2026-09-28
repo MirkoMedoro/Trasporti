@@ -136,12 +136,19 @@ località e provincia dicono dove andare; i pallet finiscono nelle note.
 - Il risultato mostra km risparmiati, gasolio, orari, la mappa, i link per
   Google Maps sul telefono dell'autista e il passaggio a "Viaggi e costi".
 
-Funziona senza configurare nulla con i PDF creati da un programma (con
-testo). Per leggere anche PDF scansionati o foto serve la lettura
-intelligente: su Railway aggiungi nelle **Variables** `ANTHROPIC_API_KEY` con
-una chiave creata su **https://console.anthropic.com** (a pagamento, pochi
-centesimi a distinta). Senza chiave, per le scansioni si possono scrivere o
-incollare le tappe a mano.
+Senza configurare nulla legge:
+
+- i PDF creati da un programma (con testo): lettura immediata e precisa;
+- i PDF scansionati e le foto, con la **lettura gratuita** che lavora nel
+  browser: 10–20 secondi a pagina, la prima volta scarica circa 5 MB. È meno
+  precisa: il programma avvisa di controllare nomi, indirizzi e pesi, e le
+  tappe senza tipo vanno indicate a mano. Rende meglio con scansioni a
+  300 dpi e foto scattate dritte dall'alto, con buona luce.
+
+Facoltativo, per scansioni e foto più difficili: la **lettura intelligente**.
+Su Railway aggiungi nelle **Variables** `ANTHROPIC_API_KEY` con una chiave
+creata su **https://platform.claude.com** (a pagamento, pochi centesimi a
+distinta). Con la chiave compare la spunta "Lettura intelligente".
 
 ## Backup dei dati
 

@@ -1670,6 +1670,109 @@
     }
     return pdfJsPronto;
   }
+  // Lettura gratuita di scansioni e foto, fatta nel browser (nessun servizio esterno)
+  var ocrPronto = null;
+  function caricaOcr() {
+    if (window.Tesseract) return Promise.resolve(window.Tesseract);
+    if (!ocrPronto) {
+      ocrPronto = new Promise(function (ok, ko) {
+        var s = document.createElement('script');
+        s.src = '/lib/ocr/tesseract.min.js';
+        s.onload = function () { ok(window.Tesseract); };
+        s.onerror = function () { ocrPronto = null; ko(new Error('Impossibile caricare il lettore delle scansioni.')); };
+        document.head.appendChild(s);
+      });
+    }
+    return ocrPronto;
+  }
+  function immagineDaFile(file) {
+    return new Promise(function (ok, ko) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () { ok(img); };
+      img.onerror = function () { URL.revokeObjectURL(url); ko(new Error('Formato immagine non leggibile: usa una foto JPG o PNG.')); };
+      img.src = url;
+    });
+  }
+  // pagine: [{ disegna(canvas) -> Promise, larghezzaPt }]; avanzamento(testo)
+  function leggiScansione(pagine, avanzamento) {
+    var worker = null, tutte = [];
+    return caricaOcr().then(function (T) {
+      avanzamento('Preparo il lettore (la prima volta scarica circa 5 MB)…');
+      return T.createWorker('ita', 1, {
+        workerPath: '/lib/ocr/worker.min.js', corePath: '/lib/ocr/', langPath: '/lib/ocr',
+        logger: function (m) {
+          if (m.status === 'recognizing text') avanzamento('Leggo la scansione' + (pagine.length > 1 ? ', pagina ' + (paginaCorrente + 1) + ' di ' + pagine.length : '') + '… ' + Math.round(m.progress * 100) + '%');
+        }
+      });
+    }).then(function (w) {
+      worker = w;
+      return w.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
+    }).then(function () {
+      return pagine.reduce(function (catena, pg, n) {
+        return catena.then(function () {
+          paginaCorrente = n;
+          var canvas = document.createElement('canvas');
+          return pg.disegna(canvas).then(function () {
+            var ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+            var dati = ctx.getImageData(0, 0, w, h), px = dati.data, grigio = new Uint8Array(w * h);
+            for (var i = 0; i < w * h; i++) grigio[i] = (px[i * 4] * 3 + px[i * 4 + 1] * 6 + px[i * 4 + 2]) / 10;
+            var pulita = window.Giro.pulisciImmagine(grigio, w, h);
+            for (var j = 0; j < w * h; j++) { px[j * 4] = px[j * 4 + 1] = px[j * 4 + 2] = pulita[j]; px[j * 4 + 3] = 255; }
+            ctx.putImageData(dati, 0, 0);
+            return worker.recognize(canvas, { rotateAuto: true }, { blocks: true });
+          }).then(function (r) {
+            var parole = [];
+            (r.data.blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (p) { (p.lines || []).forEach(function (l) { (l.words || []).forEach(function (x) {
+              parole.push({ testo: x.text, conf: x.confidence, x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1 });
+            }); }); }); });
+            tutte = tutte.concat(window.Giro.righeDaOcr(parole, canvas.width / pg.larghezzaPt, n + 1));
+          });
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      worker.terminate();
+      window._ultimaLetturaOcr = tutte; // utile per capire cosa è stato letto
+      return tutte;
+    }, function (e) { if (worker) worker.terminate(); throw e; });
+  }
+  var paginaCorrente = 0;
+  function paginePdf(pdf) {
+    var pagine = [];
+    for (var n = 1; n <= pdf.numPages; n++) (function (n) {
+      var pg = { larghezzaPt: 842 };
+      pg.disegna = function (canvas) {
+        return pdf.getPage(n).then(function (pagina) {
+          var v1 = pagina.getViewport({ scale: 1 });
+          pg.larghezzaPt = v1.width;
+          // circa 300-400 dpi: le scritte piccole dei borderò si leggono meglio
+          var scala = Math.min(5, Math.max(2, 3400 / Math.max(v1.width, v1.height)));
+          var v = pagina.getViewport({ scale: scala });
+          canvas.width = Math.round(v.width); canvas.height = Math.round(v.height);
+          var ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+          return pagina.render({ canvasContext: ctx, viewport: v }).promise;
+        });
+      };
+      pagine.push(pg);
+    })(n);
+    return pagine;
+  }
+  function paginaFoto(img) {
+    var lato = Math.max(img.naturalWidth, img.naturalHeight);
+    // le foto piccole vengono ingrandite, quelle enormi ridotte
+    var scala = Math.min(2.5, Math.max(0.5, 3400 / lato));
+    return [{
+      larghezzaPt: img.naturalWidth >= img.naturalHeight ? 842 : 595,
+      disegna: function (canvas) {
+        canvas.width = Math.round(img.naturalWidth * scala); canvas.height = Math.round(img.naturalHeight * scala);
+        var ctx = canvas.getContext('2d'); ctx.imageSmoothingQuality = 'high';
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(img.src);
+        return Promise.resolve();
+      }
+    }];
+  }
+
   function leggiFile(file, comeTesto) {
     return new Promise(function (ok, ko) {
       var r = new FileReader();
@@ -1687,12 +1790,12 @@
   }
   // Cerca un indirizzo; se non lo trova prova con CAP e località (posizione approssimata)
   function trovaIndirizzo(testo) {
-    return api('GET', '/api/percorsi/cerca?paese=it&q=' + encodeURIComponent(testo)).then(function (r) {
+    return api('GET', '/api/percorsi/cerca?paese=it&solo=indirizzo&q=' + encodeURIComponent(testo)).then(function (r) {
       if (r.length) return { lat: r[0].lat, lon: r[0].lon, nome: r[0].nome, trovato: 'si' };
       var m = String(testo).match(/\b\d{5}\b[^,]*/);
       var comune = m ? m[0] : String(testo).split(',').slice(-1)[0];
       if (!comune || comune.trim() === String(testo).trim()) return null;
-      return api('GET', '/api/percorsi/cerca?paese=it&q=' + encodeURIComponent(comune.trim())).then(function (r2) {
+      return api('GET', '/api/percorsi/cerca?paese=it&solo=indirizzo&q=' + encodeURIComponent(comune.trim())).then(function (r2) {
         return r2.length ? { lat: r2[0].lat, lon: r2[0].lon, nome: r2[0].nome, trovato: 'comune' } : null;
       });
     });
@@ -1736,8 +1839,8 @@
         '<div class="riga-azioni no-stampa"><button class="btn" id="giro-nuovo">Nuovo giro</button></div></div>' +
         '<section class="pannello no-stampa"><h2>1. Carica la distinta</h2>' +
           '<div class="carica-distinta">' +
-            '<div><label class="btn btn-scuro" style="cursor:pointer">Scegli PDF' + (servizio.ai ? ' o foto' : '') + '<input type="file" id="giro-file" accept="application/pdf' + (servizio.ai ? ',image/jpeg,image/png,image/webp' : '') + '" hidden></label>' +
-              (servizio.ai ? '<label class="spunta" style="margin-top:10px"><input type="checkbox" id="giro-ai" checked> Lettura intelligente (legge anche scansioni e foto)</label>' : '<p class="nota" style="margin-top:8px">Legge i PDF con testo (quelli creati da un programma). Per scansioni e foto serve la lettura intelligente.</p>') +
+            '<div><label class="btn btn-scuro" style="cursor:pointer">Scegli PDF o foto<input type="file" id="giro-file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden></label>' +
+              (servizio.ai ? '<label class="spunta" style="margin-top:10px"><input type="checkbox" id="giro-ai" checked> Lettura intelligente (più precisa su scansioni e foto)</label>' : '<p class="nota" style="margin-top:8px">Legge i PDF creati da un programma e, con la lettura gratuita, anche scansioni e foto (più lente e da controllare).</p>') +
             '</div>' +
             '<div class="oppure">oppure</div>' +
             '<div><label class="campo">Scrivi o incolla le tappe, una per riga<textarea id="giro-testo" rows="4" placeholder="Consegna Rossi Srl, Via Roma 12, 52100 Arezzo&#10;Ritiro Bianchi, Via Senese 45, 53100 Siena">' + esc(g.testo) + '</textarea></label>' +
@@ -1826,16 +1929,32 @@
             .catch(function (e) { statoLettura.innerHTML = '<span class="errore">' + esc(e.message) + '</span>'; });
           return;
         }
-        if (file.type !== 'application/pdf') { statoLettura.innerHTML = '<span class="errore">Senza la lettura intelligente posso leggere solo PDF.</span>'; return; }
-        Promise.all([caricaPdfJs(), leggiFile(file)]).then(function (x) {
-          return x[0].getDocument({ data: new Uint8Array(x[1]) }).promise;
-        }).then(function (pdf) { return window.Giro.righeDaPdf(pdf); }).then(function (righe) {
-          if (!righe.length) {
-            statoLettura.innerHTML = '<span class="errore">Il PDF non contiene testo: è probabilmente una scansione. ' + (servizio.ai ? 'Usa la lettura intelligente.' : 'Per leggerlo serve la lettura intelligente, oppure scrivi le tappe a mano.') + '</span>';
+        function avanza(t) { statoLettura.textContent = t; }
+        function daScansione(righe) {
+          var ris = window.Giro.estraiTappe(righe).tappe;
+          if (!ris.length) {
+            statoLettura.innerHTML = '<span class="errore">Non riesco a trovare le tappe nella scansione. Prova con una scansione più nitida (almeno 300 dpi, foglio dritto e ben illuminato), oppure scrivi le tappe a mano.</span>';
             return;
           }
-          caricaTappe(window.Giro.estraiTappe(righe).tappe, 'pdf');
-        }).catch(function (e) { statoLettura.innerHTML = '<span class="errore">Non riesco a leggere il PDF: ' + esc(e.message) + '</span>'; });
+          caricaTappe(ris, 'pdf');
+          statoLettura.innerHTML += '<br><span class="avviso-ocr">⚠ Letto da scansione: controlla bene nomi, indirizzi e pesi prima di ottimizzare.</span>';
+        }
+        function errore(e) { statoLettura.innerHTML = '<span class="errore">Non riesco a leggere il file: ' + esc(e.message) + '</span>'; }
+        if (file.type !== 'application/pdf') {
+          if (!/^image\//.test(file.type)) { errore(new Error('usa un PDF o una foto JPG/PNG.')); return; }
+          avanza('Preparo la foto…');
+          immagineDaFile(file).then(function (img) { return leggiScansione(paginaFoto(img), avanza); }).then(daScansione).catch(errore);
+          return;
+        }
+        var documento;
+        Promise.all([caricaPdfJs(), leggiFile(file)]).then(function (x) {
+          return x[0].getDocument({ data: new Uint8Array(x[1]) }).promise;
+        }).then(function (pdf) { documento = pdf; return window.Giro.righeDaPdf(pdf); }).then(function (righe) {
+          if (righe.length) { caricaTappe(window.Giro.estraiTappe(righe).tappe, 'pdf'); return; }
+          // nessun testo: è una scansione, si prova la lettura gratuita
+          avanza('Il PDF è una scansione: provo a leggerlo, può richiedere un minuto…');
+          return leggiScansione(paginePdf(documento), avanza).then(daScansione);
+        }).catch(errore);
       };
       main.querySelector('#giro-testo').oninput = function () { g.testo = this.value; };
       main.querySelector('#giro-leggi-testo').onclick = function () {

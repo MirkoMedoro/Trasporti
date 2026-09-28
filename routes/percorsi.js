@@ -61,7 +61,9 @@ r.get('/cerca', async (req, res) => {
   if (q.length < 3) return res.json([]);
   // paese=it limita la ricerca all'Italia (usato da Ottimizza giro: le distinte spesso non hanno il CAP)
   const paese = /^[a-z]{2}$/i.test(String(req.query.paese || '')) ? String(req.query.paese).toLowerCase() : '';
-  const chiave = (ORS() ? 'o:' : 'n:') + paese + ':' + q.toLowerCase();
+  // solo=indirizzo: cerca solo vie, numeri civici e località, mai nomi di ditte o negozi (Ottimizza giro)
+  const soloIndirizzi = req.query.solo === 'indirizzo';
+  const chiave = (ORS() ? 'o:' : 'n:') + paese + ':' + (soloIndirizzi ? 'i:' : '') + q.toLowerCase();
   if (memoria.has(chiave)) return res.json(memoria.get(chiave));
   try {
     let risultati;
@@ -72,6 +74,7 @@ r.get('/cerca', async (req, res) => {
       u.searchParams.set('size', '6');
       u.searchParams.set('lang', 'it');
       if (paese) u.searchParams.set('boundary.country', paese.toUpperCase());
+      if (soloIndirizzi) u.searchParams.set('layers', 'address,street,locality,localadmin,neighbourhood');
       const d = await chiedi(u);
       risultati = (d.features || []).map((f) => ({
         nome: f.properties.label, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
@@ -84,6 +87,7 @@ r.get('/cerca', async (req, res) => {
       u.searchParams.set('limit', '6');
       u.searchParams.set('accept-language', 'it');
       if (paese) u.searchParams.set('countrycodes', paese);
+      if (soloIndirizzi) u.searchParams.set('layer', 'address');
       const d = await chiedi(u, { headers: { 'User-Agent': AGENTE } });
       risultati = (d || []).map((x) => ({ nome: x.display_name, lat: Number(x.lat), lon: Number(x.lon) }));
     }

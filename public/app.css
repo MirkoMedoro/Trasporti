@@ -346,3 +346,6 @@ tr.riga-scelta td { background: #fff8e0; }
   .menu a.figlia { padding-left: 10px; }
 }
 @media (max-width: 1100px) { .tassato-cruscotto { position: static; box-shadow: none; } }
+.tassato-cruscotto .principale small.arrotondato { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(0,0,0,.2); font-size: 13px; }
+.tassato-cruscotto .principale small.arrotondato b { font-size: 16px; font-family: var(--titoli); }
+#campo-arrotonda[hidden] { display: none; }

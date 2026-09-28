@@ -1321,6 +1321,7 @@
       rapporto: s.rapporto || 250,
       altezzaNs: s.altezzaNs || 240,
       modoTariffa: s.modoTariffa || 'kg',
+      arrotonda: s.arrotonda != null ? s.arrotonda : 100,
       tariffa: s.tariffa != null ? s.tariffa : '',
       minimo: s.minimo != null ? s.minimo : ''
     };
@@ -1347,11 +1348,15 @@
       return { completa: completa, volume: vol, reale: reale, volumetrico: vol * rapporto, pesoCollo: pesoCollo, n: n, l: l, p: p, h: h, ns: ns, hTassata: hTassata };
     });
     var volumetrico = tot.volume * rapporto;
-    var tassato = Math.ceil(Math.max(tot.reale, volumetrico) - 1e-9);
+    var tassato = Math.ceil(Math.max(tot.reale, volumetrico) - 1e-6);
+    // Arrotondamento per eccesso del peso tassato (di norma ai 100 kg superiori)
+    var passo = Math.max(0, Math.floor(numero(t.arrotonda)));
+    var arrotondato = passo > 0 ? Math.ceil(tassato / passo) * passo : tassato;
     return {
       righe: righe, colli: tot.colli, incomplete: tot.incomplete, rapporto: rapporto, altezzaNs: altezzaNs, nonSovrapp: tot.nonSovrapp,
       reale: tot.reale, volume: tot.volume, volumetrico: volumetrico, tassato: tassato,
-      sulVolume: volumetrico > tot.reale
+      sulVolume: volumetrico > tot.reale,
+      passo: passo, arrotondato: arrotondato
     };
   }
 
@@ -1410,6 +1415,10 @@
           '<h2>Prezzo</h2>' +
           '<div class="griglia-form" style="margin-top:14px">' +
             '<label class="campo">Tariffa<select id="t-modotariffa"><option value="kg"' + (t.modoTariffa === 'kg' ? ' selected' : '') + '>€ ogni 100 kg tassati</option><option value="ldm"' + (t.modoTariffa === 'ldm' ? ' selected' : '') + '>€ per metro lineare</option></select></label>' +
+            '<label class="campo" id="campo-arrotonda">Arrotondamento peso<select id="t-arrotonda">' +
+              [[100, 'ai 100 kg superiori'], [50, 'ai 50 kg superiori'], [10, 'ai 10 kg superiori'], [0, 'nessun arrotondamento']].map(function (o) {
+                return '<option value="' + o[0] + '"' + (Number(t.arrotonda) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+              }).join('') + '</select></label>' +
             '<label class="campo">Importo tariffa (€)<input type="number" min="0" step="0.01" id="t-tariffa" value="' + esc(t.tariffa) + '"></label>' +
             '<label class="campo">Prezzo minimo (€)<input type="number" min="0" step="0.01" id="t-minimo" value="' + esc(t.minimo) + '"></label>' +
           '</div>' +
@@ -1463,7 +1472,8 @@
           '<div' + (!c.sulVolume && c.reale ? ' class="determina"' : '') + '><span class="desc">Peso reale</span><b>' + num(c.reale, 1) + ' kg</b></div>' +
           '<div><span class="desc">Volume tassabile</span><b>' + num(c.volume, 3) + ' m³</b>' + (c.nonSovrapp ? '<small>' + c.nonSovrapp + (c.nonSovrapp === 1 ? ' collo non sovrapponibile' : ' colli non sovrapponibili') + ' ' + altezzeNs(c) + '</small>' : '') + '</div>' +
           '<div' + (c.sulVolume ? ' class="determina"' : '') + '><span class="desc">Peso volumetrico <small>(×' + num(c.rapporto) + ')</small></span><b>' + num(c.volumetrico, 1) + ' kg</b></div>' +
-          '<div class="principale"><span class="desc">Peso tassato</span><b>' + num(c.tassato) + ' kg</b><small>' + (c.colli ? (c.sulVolume ? 'calcolato sul volume' : 'calcolato sul peso reale') : '') + '</small></div>' +
+          '<div class="principale"><span class="desc">Peso tassato</span><b>' + num(c.tassato) + ' kg</b><small>' + (c.colli ? (c.sulVolume ? 'calcolato sul volume' : 'calcolato sul peso reale') : '') + '</small>' +
+            (c.colli && t.modoTariffa !== 'ldm' && c.passo && c.arrotondato !== c.tassato ? '<small class="arrotondato">Arrotondato: <b>' + num(c.arrotondato) + ' kg</b></small>' : '') + '</div>' +
           '<div id="t-ldm"><span class="desc">Metri lineari</span><b>' + (ldm ? ldm.testo : '–') + '</b><small>' + (ldm && ldm.nota ? ldm.nota : '') + '</small></div>';
         aggiornaPrezzo();
         pianificaLdm();
@@ -1505,8 +1515,10 @@
           base = ldm.metri * tariffa;
           spiega = num(ldm.metri, 2) + ' m × ' + euro(tariffa) + ' al metro';
         } else {
-          base = c.tassato / 100 * tariffa;
-          spiega = num(c.tassato) + ' kg tassati × ' + euro(tariffa) + ' ogni 100 kg';
+          base = c.arrotondato / 100 * tariffa;
+          spiega = (c.passo && c.arrotondato !== c.tassato
+            ? num(c.tassato) + ' kg tassati, arrotondati a <b>' + num(c.arrotondato) + ' kg</b> (ai ' + num(c.passo) + ' kg superiori)<br>' + num(c.arrotondato) + ' kg'
+            : num(c.arrotondato) + ' kg tassati') + ' × ' + euro(tariffa) + ' ogni 100 kg';
         }
         var prezzo = Math.max(base, minimo);
         t.prezzo = prezzo;
@@ -1557,18 +1569,21 @@
         aggiorna();
       };
       main.querySelector('#t-modopeso').onchange = function () { t.modoPeso = this.value; disegnaRighe(); };
-      main.querySelector('#t-modotariffa').onchange = function () { t.modoTariffa = this.value; aggiornaPrezzo(); };
+      function mostraArrotonda() { main.querySelector('#campo-arrotonda').hidden = t.modoTariffa === 'ldm'; }
+      main.querySelector('#t-modotariffa').onchange = function () { t.modoTariffa = this.value; mostraArrotonda(); aggiorna(); };
+      main.querySelector('#t-arrotonda').onchange = function () { t.arrotonda = Number(this.value); aggiorna(); };
+      mostraArrotonda();
       main.querySelector('#t-tariffa').oninput = function () { t.tariffa = this.value; aggiornaPrezzo(); };
       main.querySelector('#t-minimo').oninput = function () { t.minimo = this.value; aggiornaPrezzo(); };
       var pred = main.querySelector('#t-predefiniti');
       if (pred) pred.onclick = function () {
-        api('PUT', '/api/impostazioni/tassato', { rapporto: numero(t.rapporto), altezzaNs: numero(t.altezzaNs), modoTariffa: t.modoTariffa, tariffa: numero(t.tariffa), minimo: numero(t.minimo) })
+        api('PUT', '/api/impostazioni/tassato', { rapporto: numero(t.rapporto), altezzaNs: numero(t.altezzaNs), arrotonda: numero(t.arrotonda), modoTariffa: t.modoTariffa, tariffa: numero(t.tariffa), minimo: numero(t.minimo) })
           .then(function () { avvisa('Valori predefiniti salvati per tutta l’azienda'); })
           .catch(function (err) { avvisa(err.message); });
       };
       main.querySelector('#t-nuovo').onclick = function () {
         var vecchio = t;
-        stato.tassato = nuovoTassato({ rapporto: vecchio.rapporto, altezzaNs: vecchio.altezzaNs, modoTariffa: vecchio.modoTariffa, tariffa: vecchio.tariffa, minimo: vecchio.minimo });
+        stato.tassato = nuovoTassato({ rapporto: vecchio.rapporto, altezzaNs: vecchio.altezzaNs, arrotonda: vecchio.arrotonda, modoTariffa: vecchio.modoTariffa, tariffa: vecchio.tariffa, minimo: vecchio.minimo });
         ldm = null;
         vistaTassato();
       };
@@ -1586,6 +1601,7 @@
         var testo = 'Spedizione: ' + num(c.colli) + ' colli\n' + righe.join('\n') + '\n' +
           'Peso reale: ' + num(c.reale, 1) + ' kg\nVolume tassabile: ' + num(c.volume, 3) + ' m³\n' +
           'Peso tassato: ' + num(c.tassato) + ' kg (1 m³ = ' + num(c.rapporto) + ' kg)\n' +
+          (t.modoTariffa !== 'ldm' && c.passo && c.arrotondato !== c.tassato ? 'Peso tassato arrotondato: ' + num(c.arrotondato) + ' kg (ai ' + num(c.passo) + ' kg superiori)\n' : '') +
           (ldm && ldm.metri != null ? 'Metri lineari: ' + num(ldm.metri, 2) + ' m\n' : '') +
           (t.prezzo ? 'Prezzo: ' + euro(t.prezzo) + ' + IVA\n' : '');
         var fatto = function () { avvisa('Riepilogo copiato: incollalo dove vuoi'); };

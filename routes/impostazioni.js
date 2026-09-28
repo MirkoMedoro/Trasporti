@@ -30,7 +30,7 @@ r.put('/costi', richiediRuolo('admin'), async (req, res, next) => {
 });
 
 // Impostazioni del calcolo del peso tassato
-const CAMPI_TASSATO = { rapporto: [1, 10000], tariffa: [0, 100000], minimo: [0, 100000] };
+const CAMPI_TASSATO = { rapporto: [1, 10000], altezzaNs: [50, 500], tariffa: [0, 100000], minimo: [0, 100000] };
 
 r.get('/tassato', async (req, res, next) => {
   try {

@@ -87,7 +87,7 @@
       '<div class="accesso">' +
         '<div class="accesso-lato">' +
           '<div class="marchio"><div class="marchio-segno"></div><span>Stiva</span></div>' +
-          '<div><h1>Ogni collo al suo posto.</h1><p>Piani di carico calcolati sulle misure reali dei tuoi mezzi, con peso e impilabilità sotto controllo.</p></div>' +
+          '<div><h1>Ogni collo al suo posto.</h1><p>Piani di carico calcolati sulle misure reali dei tuoi mezzi, con peso e sovrapponibilità sotto controllo.</p></div>' +
           '<div class="cassoni" aria-hidden="true">' + cassoni + '</div>' +
         '</div>' +
         '<div class="accesso-form"><form novalidate>' +
@@ -534,7 +534,7 @@
           '<h2 style="margin-bottom:14px">Colli da caricare</h2>' +
           '<div class="tabella-scroll"><table class="tab-colli"><thead><tr>' +
             '<th></th><th>Descrizione</th><th class="num">Lungh. cm</th><th class="num">Largh. cm</th><th class="num">Alt. cm</th><th class="num">Peso kg</th><th class="num">Quantità</th>' +
-            '<th title="Si possono appoggiare altri colli sopra">Impilabile</th><th title="Si può girare di 90° sul pianale">Ruotabile</th><th></th>' +
+            '<th title="Spunta se sopra questo collo non si può appoggiare nulla">Non sovrapp.</th><th title="Si può girare di 90° sul pianale">Ruotabile</th><th></th>' +
           '</tr></thead><tbody id="righe"></tbody></table></div>' +
           '<div class="aggiungi-colli">' +
             '<button class="btn btn-piccolo" data-agg="eur">Aggiungi bancale EUR 120×80</button>' +
@@ -574,7 +574,7 @@
             ['lunghezza', 'larghezza', 'altezza', 'peso', 'quantita'].map(function (k) {
               return '<td class="num"><input type="number" min="' + (k === 'peso' ? 0 : 1) + '" data-k="' + k + '" value="' + esc(r[k]) + '" aria-label="' + k + '"></td>';
             }).join('') +
-            '<td class="centro"><input type="checkbox" data-k="impilabile"' + (r.impilabile ? ' checked' : '') + ' aria-label="Impilabile"></td>' +
+            '<td class="centro"><input type="checkbox" data-k="nonSovrapp"' + (r.impilabile === false ? ' checked' : '') + ' aria-label="Non sovrapponibile"></td>' +
             '<td class="centro"><input type="checkbox" data-k="ruotabile"' + (r.ruotabile ? ' checked' : '') + ' aria-label="Ruotabile"></td>' +
             '<td style="white-space:nowrap"><button class="btn-testo" data-salva="' + i + '" title="Salva per riutilizzarlo">Salva</button>' +
             '<button class="btn-testo pericolo" data-togli="' + i + '">Togli</button></td></tr>';
@@ -589,7 +589,8 @@
       tbody.addEventListener('input', function (e) {
         var k = e.target.dataset.k; if (!k) return;
         var r = p.righe[Number(e.target.closest('tr').dataset.i)];
-        r[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+        if (k === 'nonSovrapp') r.impilabile = !e.target.checked;
+        else r[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
         aggiornaTotali();
         main.querySelector('#consiglio').innerHTML = '';
       });
@@ -838,7 +839,7 @@
           var etich = Math.min(b.l, b.w) >= testo * 1.6
             ? '<text x="' + (b.x + b.l / 2) + '" y="' + (b.y + b.w / 2) + '" font-size="' + testo + '" text-anchor="middle" dominant-baseline="central" fill="#000" font-family="Barlow Condensed, Arial Narrow, sans-serif" font-weight="600">' + b.n + '</text>' : '';
           var x = !b.impilabile ? '<path d="M' + (b.x + 6) + ' ' + (b.y + 6) + 'l' + Math.min(14, b.l / 4) + ' ' + Math.min(14, b.w / 4) + 'M' + (b.x + 6 + Math.min(14, b.l / 4)) + ' ' + (b.y + 6) + 'l-' + Math.min(14, b.l / 4) + ' ' + Math.min(14, b.w / 4) + '" stroke="#c8341e" stroke-width="2.5"/>' : '';
-          return '<g><title>n. ' + b.n + ', ' + esc(b.nome) + ', ' + b.l + '×' + b.w + '×' + b.h + ' cm, ' + b.peso + ' kg' + (b.impilabile ? '' : ', non impilabile') + '</title>' +
+          return '<g><title>n. ' + b.n + ', ' + esc(b.nome) + ', ' + b.l + '×' + b.w + '×' + b.h + ' cm, ' + b.peso + ' kg' + (b.impilabile ? '' : ', non sovrapponibile') + '</title>' +
             '<rect x="' + b.x + '" y="' + b.y + '" width="' + b.l + '" height="' + b.w + '" fill="' + c + '" stroke="#fff" stroke-width="2"/>' + etich + x + '</g>';
         }).join('') +
         '</svg>';
@@ -848,7 +849,7 @@
       sez.querySelector('.legenda-strato').innerHTML =
         '<span>' + sopra.length + ' colli in questo strato, ' + num(peso) + ' kg</span>' +
         (sotto.length ? '<span><i class="pallino" style="background:#e3e6ea"></i>colli degli strati sotto</span>' : '') +
-        (sopra.some(function (b) { return !b.impilabile; }) ? '<span style="color:var(--rosso)">✕ non impilabile</span>' : '');
+        (sopra.some(function (b) { return !b.impilabile; }) ? '<span style="color:var(--rosso)">✕ non sovrapponibile</span>' : '');
     }
     var cursore = sez.querySelector('.cursore-strato');
     if (cursore) cursore.oninput = function () { disegna(Number(cursore.value)); };
@@ -1286,8 +1287,8 @@
   // Semirimorchio standard su cui si misurano i metri lineari
   var VANO_LDM = { nome: 'Semirimorchio standard', lunghezza: 1360, larghezza: 248, altezza: 270, portata: Infinity };
   var RIGHE_RAPIDE = {
-    eur: { nome: 'Bancale EUR', l: 120, p: 80, h: '', peso: '', n: 1, impilabile: false },
-    ind: { nome: 'Bancale 120×100', l: 120, p: 100, h: '', peso: '', n: 1, impilabile: false },
+    eur: { nome: 'Bancale EUR', l: 120, p: 80, h: '', peso: '', n: 1, impilabile: true },
+    ind: { nome: 'Bancale 120×100', l: 120, p: 100, h: '', peso: '', n: 1, impilabile: true },
     collo: { nome: 'Collo', l: '', p: '', h: '', peso: '', n: 1, impilabile: true }
   };
 
@@ -1297,6 +1298,7 @@
       righe: [Object.assign({}, RIGHE_RAPIDE.eur)],
       modoPeso: 'collo',
       rapporto: s.rapporto || 250,
+      altezzaNs: s.altezzaNs || 240,
       modoTariffa: s.modoTariffa || 'kg',
       tariffa: s.tariffa != null ? s.tariffa : '',
       minimo: s.minimo != null ? s.minimo : ''
@@ -1306,25 +1308,39 @@
   // Tutti i calcoli del modulo, in un posto solo
   function calcolaTassato(t) {
     var rapporto = numero(t.rapporto) || 250;
-    var tot = { colli: 0, reale: 0, volume: 0, incomplete: 0 };
+    var altezzaNs = numero(t.altezzaNs) || 240;
+    var tot = { colli: 0, reale: 0, volume: 0, incomplete: 0, nonSovrapp: 0 };
     var righe = t.righe.map(function (r) {
       var n = Math.floor(numero(r.n)), l = numero(r.l), p = numero(r.p), h = numero(r.h), peso = numero(r.peso);
       var completa = n > 0 && l > 0 && p > 0 && h > 0 && peso >= 0 && String(r.peso).trim() !== '';
-      var vol = n > 0 && l > 0 && p > 0 && h > 0 ? n * l * p * h / 1e6 : 0;
+      // Non sovrapponibile: si tassa come se occupasse l'altezza indicata (di norma 240 cm)
+      var ns = r.impilabile === false;
+      var hTassata = ns ? Math.max(h, numero(r.hNs) || altezzaNs) : h;
+      if (ns && n > 0) tot.nonSovrapp += n;
+      var vol = n > 0 && l > 0 && p > 0 && h > 0 ? n * l * p * hTassata / 1e6 : 0;
       var reale = n > 0 ? (t.modoPeso === 'totale' ? peso : peso * n) : 0;
       var pesoCollo = n > 0 ? (t.modoPeso === 'totale' ? peso / n : peso) : 0;
       if (!completa && (r.l !== '' || r.p !== '' || r.h !== '' || r.peso !== '')) tot.incomplete++;
       if (n > 0) tot.colli += n;
       tot.reale += reale; tot.volume += vol;
-      return { completa: completa, volume: vol, reale: reale, volumetrico: vol * rapporto, pesoCollo: pesoCollo, n: n, l: l, p: p, h: h };
+      return { completa: completa, volume: vol, reale: reale, volumetrico: vol * rapporto, pesoCollo: pesoCollo, n: n, l: l, p: p, h: h, ns: ns, hTassata: hTassata };
     });
     var volumetrico = tot.volume * rapporto;
     var tassato = Math.ceil(Math.max(tot.reale, volumetrico) - 1e-9);
     return {
-      righe: righe, colli: tot.colli, incomplete: tot.incomplete, rapporto: rapporto,
+      righe: righe, colli: tot.colli, incomplete: tot.incomplete, rapporto: rapporto, altezzaNs: altezzaNs, nonSovrapp: tot.nonSovrapp,
       reale: tot.reale, volume: tot.volume, volumetrico: volumetrico, tassato: tassato,
       sulVolume: volumetrico > tot.reale
     };
+  }
+
+  // Testo delle altezze tassate usate dai non sovrapponibili ("a 240 cm" o "a 200 e 240 cm")
+  function altezzeNs(c) {
+    var h = [];
+    c.righe.forEach(function (x) { if (x.ns && x.n > 0 && h.indexOf(x.hTassata) < 0) h.push(x.hTassata); });
+    h.sort(function (a, b) { return a - b; });
+    if (!h.length) return '';
+    return 'a ' + (h.length === 1 ? num(h[0]) : h.slice(0, -1).map(function (v) { return num(v); }).join(', ') + ' e ' + num(h[h.length - 1])) + ' cm';
   }
 
   // Righe nel formato del piano di carico
@@ -1354,12 +1370,13 @@
         '<section class="pannello">' +
           '<div class="tassato-regole">' +
             '<label class="campo">1 m³ equivale a<span class="con-unita"><input type="number" min="1" step="1" id="t-rapporto" value="' + esc(t.rapporto) + '"><span>kg</span></span></label>' +
+            '<label class="campo">Altezza tassata dei non sovrapponibili<span class="con-unita"><input type="number" min="50" step="1" id="t-altezzans" value="' + esc(t.altezzaNs) + '"><span>cm</span></span></label>' +
             '<label class="campo">Il peso che inserisci è<select id="t-modopeso"><option value="collo"' + (t.modoPeso === 'collo' ? ' selected' : '') + '>per singolo collo</option><option value="totale"' + (t.modoPeso === 'totale' ? ' selected' : '') + '>totale della riga</option></select></label>' +
           '</div>' +
           '<div class="tabella-scroll"><table class="tab-colli tab-tassato"><thead><tr>' +
             '<th>Descrizione</th><th class="num">Colli</th><th class="num">Lungh. cm</th><th class="num">Largh. cm</th><th class="num">Alt. cm</th>' +
-            '<th class="num" id="t-intest-peso"></th><th title="Si possono appoggiare altri colli sopra">Impilabile</th>' +
-            '<th class="num calcolato">Volume m³</th><th class="num calcolato">Peso reale</th><th class="num calcolato">Peso volum.</th><th></th>' +
+            '<th class="num" id="t-intest-peso"></th><th title="Spunta se sopra questo collo non si può appoggiare nulla">Non sovrapp.</th><th class="num" title="Altezza usata per il volume dei colli non sovrapponibili">Alt. tassata</th>' +
+            '<th class="num calcolato">Vol. tassabile m³</th><th class="num calcolato">Peso reale</th><th class="num calcolato">Peso volum.</th><th></th>' +
           '</tr></thead><tbody id="t-righe"></tbody></table></div>' +
           '<div class="aggiungi-colli">' +
             '<button class="btn btn-piccolo" data-rapida="eur">Aggiungi bancale EUR 120×80</button>' +
@@ -1376,7 +1393,7 @@
             '<label class="campo">Prezzo minimo (€)<input type="number" min="0" step="0.01" id="t-minimo" value="' + esc(t.minimo) + '"></label>' +
           '</div>' +
           '<div id="t-prezzo" class="t-prezzo"></div>' +
-          (admin ? '<button class="btn btn-piccolo" id="t-predefiniti" style="margin-top:14px">Usa rapporto e tariffa come predefiniti</button>' : '') +
+          (admin ? '<button class="btn btn-piccolo" id="t-predefiniti" style="margin-top:14px">Usa questi valori come predefiniti</button>' : '') +
         '</section>' +
         '<div class="barra-calcolo tassato-azioni">' +
           '<button class="btn" id="t-copia">Copia riepilogo</button>' +
@@ -1396,7 +1413,10 @@
           return '<tr data-i="' + i + '">' +
             '<td><input type="text" data-k="nome" value="' + esc(r.nome) + '" aria-label="Descrizione"></td>' +
             cella('n', 1) + cella('l', 1) + cella('p', 1) + cella('h', 1) + cella('peso', 0, 0.1) +
-            '<td class="centro"><input type="checkbox" data-k="impilabile"' + (r.impilabile ? ' checked' : '') + ' aria-label="Impilabile"></td>' +
+            '<td class="centro"><input type="checkbox" data-k="nonSovrapp"' + (r.impilabile === false ? ' checked' : '') + ' aria-label="Non sovrapponibile"></td>' +
+            (r.impilabile === false
+              ? '<td class="num"><input type="number" min="1" step="1" data-k="hNs" value="' + esc(r.hNs || '') + '" placeholder="' + esc(t.altezzaNs) + '" title="Lascia vuoto per usare ' + esc(t.altezzaNs) + ' cm"></td>'
+              : '<td class="num nota">–</td>') +
             '<td class="num calcolato" data-c="volume"></td><td class="num calcolato" data-c="reale"></td><td class="num calcolato" data-c="volumetrico"></td>' +
             '<td><button class="btn-testo pericolo" data-togli="' + i + '"' + (t.righe.length === 1 ? ' disabled' : '') + '>Togli</button></td></tr>';
         }).join('');
@@ -1420,7 +1440,7 @@
         main.querySelector('#t-cruscotto').innerHTML =
           '<div><span class="desc">Colli</span><b>' + num(c.colli) + '</b></div>' +
           '<div' + (!c.sulVolume && c.reale ? ' class="determina"' : '') + '><span class="desc">Peso reale</span><b>' + num(c.reale, 1) + ' kg</b></div>' +
-          '<div><span class="desc">Volume</span><b>' + num(c.volume, 3) + ' m³</b></div>' +
+          '<div><span class="desc">Volume tassabile</span><b>' + num(c.volume, 3) + ' m³</b>' + (c.nonSovrapp ? '<small>' + c.nonSovrapp + (c.nonSovrapp === 1 ? ' collo non sovrapponibile' : ' colli non sovrapponibili') + ' ' + altezzeNs(c) + '</small>' : '') + '</div>' +
           '<div' + (c.sulVolume ? ' class="determina"' : '') + '><span class="desc">Peso volumetrico <small>(×' + num(c.rapporto) + ')</small></span><b>' + num(c.volumetrico, 1) + ' kg</b></div>' +
           '<div class="principale"><span class="desc">Peso tassato</span><b>' + num(c.tassato) + ' kg</b><small>' + (c.colli ? (c.sulVolume ? 'calcolato sul volume' : 'calcolato sul peso reale') : '') + '</small></div>' +
           '<div id="t-ldm"><span class="desc">Metri lineari</span><b>' + (ldm ? ldm.testo : '–') + '</b><small>' + (ldm && ldm.nota ? ldm.nota : '') + '</small></div>';
@@ -1478,6 +1498,7 @@
       tbody.addEventListener('input', function (e) {
         var k = e.target.dataset.k; if (!k) return;
         var r = t.righe[Number(e.target.closest('tr').dataset.i)];
+        if (k === 'nonSovrapp') { r.impilabile = !e.target.checked; disegnaRighe(); return; }
         r[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
         aggiorna();
       });
@@ -1509,19 +1530,24 @@
 
       // --- regole e prezzo ---
       main.querySelector('#t-rapporto').oninput = function () { t.rapporto = this.value; aggiorna(); };
+      main.querySelector('#t-altezzans').oninput = function () {
+        t.altezzaNs = this.value;
+        tbody.querySelectorAll('[data-k=hNs]').forEach(function (i) { i.placeholder = t.altezzaNs; });
+        aggiorna();
+      };
       main.querySelector('#t-modopeso').onchange = function () { t.modoPeso = this.value; disegnaRighe(); };
       main.querySelector('#t-modotariffa').onchange = function () { t.modoTariffa = this.value; aggiornaPrezzo(); };
       main.querySelector('#t-tariffa').oninput = function () { t.tariffa = this.value; aggiornaPrezzo(); };
       main.querySelector('#t-minimo').oninput = function () { t.minimo = this.value; aggiornaPrezzo(); };
       var pred = main.querySelector('#t-predefiniti');
       if (pred) pred.onclick = function () {
-        api('PUT', '/api/impostazioni/tassato', { rapporto: numero(t.rapporto), modoTariffa: t.modoTariffa, tariffa: numero(t.tariffa), minimo: numero(t.minimo) })
+        api('PUT', '/api/impostazioni/tassato', { rapporto: numero(t.rapporto), altezzaNs: numero(t.altezzaNs), modoTariffa: t.modoTariffa, tariffa: numero(t.tariffa), minimo: numero(t.minimo) })
           .then(function () { avvisa('Valori predefiniti salvati per tutta l’azienda'); })
           .catch(function (err) { avvisa(err.message); });
       };
       main.querySelector('#t-nuovo').onclick = function () {
         var vecchio = t;
-        stato.tassato = nuovoTassato({ rapporto: vecchio.rapporto, modoTariffa: vecchio.modoTariffa, tariffa: vecchio.tariffa, minimo: vecchio.minimo });
+        stato.tassato = nuovoTassato({ rapporto: vecchio.rapporto, altezzaNs: vecchio.altezzaNs, modoTariffa: vecchio.modoTariffa, tariffa: vecchio.tariffa, minimo: vecchio.minimo });
         ldm = null;
         vistaTassato();
       };
@@ -1533,10 +1559,11 @@
         var righe = t.righe.map(function (r, i) {
           var x = c.righe[i];
           if (!x.completa) return null;
-          return '- ' + x.n + ' × ' + (r.nome || 'collo') + ' ' + x.l + '×' + x.p + '×' + x.h + ' cm, ' + num(x.reale, 1) + ' kg';
+          return '- ' + x.n + ' × ' + (r.nome || 'collo') + ' ' + x.l + '×' + x.p + '×' + x.h + ' cm, ' + num(x.reale, 1) + ' kg' +
+            (x.ns ? ', non sovrapponibile (tassato a ' + num(x.hTassata) + ' cm)' : '');
         }).filter(Boolean);
         var testo = 'Spedizione: ' + num(c.colli) + ' colli\n' + righe.join('\n') + '\n' +
-          'Peso reale: ' + num(c.reale, 1) + ' kg\nVolume: ' + num(c.volume, 3) + ' m³\n' +
+          'Peso reale: ' + num(c.reale, 1) + ' kg\nVolume tassabile: ' + num(c.volume, 3) + ' m³\n' +
           'Peso tassato: ' + num(c.tassato) + ' kg (1 m³ = ' + num(c.rapporto) + ' kg)\n' +
           (ldm && ldm.metri != null ? 'Metri lineari: ' + num(ldm.metri, 2) + ' m\n' : '') +
           (t.prezzo ? 'Prezzo: ' + euro(t.prezzo) + ' + IVA\n' : '');

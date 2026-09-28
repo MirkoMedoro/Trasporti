@@ -19,6 +19,7 @@
     aziende: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21V8l6-4v17M9 21V10l12 3v8M3 21h18M13 16h4"/></svg>',
     viaggi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 18h7a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7"/></svg>',
     scadenze: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/></svg>',
+    backup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6M4.5 11.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg>',
     account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.2-7 8-7s7 2.5 8 7"/></svg>'
   };
 
@@ -132,7 +133,7 @@
   // ---------- struttura con menu ----------
   function vociMenu() {
     var r = stato.utente.ruolo;
-    if (r === 'superadmin') return [['aziende', 'Aziende clienti'], ['account', 'Il mio account']];
+    if (r === 'superadmin') return [['aziende', 'Aziende clienti'], ['backup', 'Backup'], ['account', 'Il mio account']];
     var v = [['home', 'Home']];
     if (haFunzione('carico')) v.push(['carico', 'Piano di carico']);
     if (haFunzione('viaggi')) v.push(['viaggi', 'Viaggi e costi']);
@@ -1350,41 +1351,139 @@
     }).catch(errorePagina);
   }
 
-  // ---------- Utenti (titolare) ----------
+  // ---------- Finestra di conferma riutilizzabile ----------
+  // opz: titolo, testo (HTML), pulsante, pericolo, campo {etichetta, tipo, attr}, azione(valore) -> Promise
+  function dialogo(opz) {
+    return new Promise(function (fine) {
+      var d = document.createElement('dialog');
+      d.className = 'dialogo' + (opz.pericolo ? ' dialogo-pericolo' : '');
+      d.innerHTML = '<form novalidate><h2>' + esc(opz.titolo) + '</h2><div class="dialogo-testo">' + (opz.testo || '') + '</div>' +
+        (opz.campo ? '<label class="campo">' + esc(opz.campo.etichetta) + '<input name="valore" type="' + (opz.campo.tipo || 'text') + '" autocomplete="off" ' + (opz.campo.attr || '') + '></label>' : '') +
+        '<p class="errore"></p><div class="riga-azioni"><button class="btn ' + (opz.pericolo ? 'btn-pericolo' : 'btn-primario') + '" type="submit">' + esc(opz.pulsante) + '</button>' +
+        '<button class="btn" type="button" data-annulla>Annulla</button></div></form>';
+      document.body.appendChild(d);
+      var form = d.querySelector('form'), err = d.querySelector('.errore'), input = d.querySelector('input'), btn = d.querySelector('[type=submit]');
+      var fatto = false;
+      function chiudi(esito) { if (fatto) return; fatto = true; d.close(); d.remove(); fine(esito); }
+      d.querySelector('[data-annulla]').onclick = function () { chiudi(false); };
+      d.addEventListener('cancel', function (e) { e.preventDefault(); chiudi(false); });
+      form.onsubmit = function (e) {
+        e.preventDefault();
+        var valore = input ? input.value.trim() : null;
+        if (input && !valore) { err.textContent = 'Compila il campo per continuare.'; input.focus(); return; }
+        err.textContent = '';
+        btn.disabled = true;
+        Promise.resolve(opz.azione ? opz.azione(valore) : null).then(function () { chiudi(true); }, function (e2) {
+          err.textContent = e2.message;
+          btn.disabled = false;
+          if (input) { input.select(); input.focus(); }
+        });
+      };
+      d.showModal();
+      (input || d.querySelector('[data-annulla]')).focus();
+    });
+  }
+
+  function nomeRuolo(r) { return r === 'admin' ? 'Titolare' : 'Operatore'; }
+
+  // ---------- Utenti (titolare): sola lettura ----------
   function vistaUtenti() {
     api('GET', '/api/utenti').then(function (utenti) {
-      var main = guscio('utenti',
-        '<div class="testata"><div><h1>Utenti</h1><p>I titolari gestiscono mezzi, piani e utenti. Gli operatori calcolano e salvano i piani di carico.</p></div></div>' +
-        '<div class="pannello tabella-scroll"><table><thead><tr><th>Nome</th><th>Email</th><th>Ruolo</th><th>Stato</th><th></th></tr></thead><tbody>' +
+      guscio('utenti',
+        '<div class="testata"><div><h1>Utenti</h1><p>Le persone della tua azienda che possono accedere al programma.</p></div></div>' +
+        '<div class="pannello tabella-scroll"><table><thead><tr><th>Nome</th><th>Email</th><th>Ruolo</th><th>Stato</th></tr></thead><tbody>' +
         utenti.map(function (u) {
           var io = u.id === stato.utente.id;
           return '<tr class="' + (u.attivo ? '' : 'spento') + '"><td><b>' + esc(u.nome) + '</b>' + (io ? ' <span class="nota">(tu)</span>' : '') + '</td><td>' + esc(u.email) + '</td>' +
-            '<td>' + (u.ruolo === 'admin' ? 'Titolare' : 'Operatore') + '</td>' +
-            '<td><span class="etichetta ' + (u.attivo ? 'ok' : 'no') + '">' + (u.attivo ? 'Attivo' : 'Disattivato') + '</span></td>' +
-            '<td class="num"><button class="btn-testo" data-pw="' + u.id + '">Nuova password</button>' +
-            (io ? '' : '<button class="btn-testo pericolo" data-stato="' + u.id + '" data-attivo="' + u.attivo + '">' + (u.attivo ? 'Disattiva' : 'Riattiva') + '</button>') + '</td></tr>';
+            '<td>' + nomeRuolo(u.ruolo) + '</td>' +
+            '<td><span class="etichetta ' + (u.attivo ? 'ok' : 'no') + '">' + (u.attivo ? 'Attivo' : 'Sospeso') + '</span></td></tr>';
         }).join('') + '</tbody></table></div>' +
-        '<form class="pannello" id="form-utente" novalidate><h2 style="margin-bottom:16px">Nuovo utente</h2><div class="griglia-form">' +
+        '<p class="nota" style="margin-top:14px">Per aggiungere un utente, cambiargli ruolo o password, sospenderlo o eliminarlo contatta l’amministratore del programma.</p>');
+    }).catch(errorePagina);
+  }
+
+  // ---------- Utenti di un'azienda cliente (super amministratore) ----------
+  function vistaUtentiAzienda(aid) {
+    api('GET', '/api/aziende/' + aid + '/utenti').then(function (r) {
+      var az = r.azienda, utenti = r.utenti;
+      var base = '/api/aziende/' + aid + '/utenti/';
+      var main = guscio('aziende',
+        '<div class="riga-azioni" style="margin-bottom:8px"><a class="btn-testo" href="#/aziende">Torna alle aziende clienti</a></div>' +
+        '<div class="testata"><div><h1>' + esc(az.nome) + '</h1><p>Utenti dell’azienda' + (az.attiva ? '' : '. <b>L’azienda è sospesa</b>: nessun utente può accedere finché non la riattivi') + '.</p></div></div>' +
+        (utenti.length ?
+          '<div class="pannello tabella-scroll"><table><thead><tr><th>Nome</th><th>Email</th><th>Ruolo</th><th>Stato</th><th class="num">Piani</th><th class="num">Viaggi</th><th>Creato</th><th></th></tr></thead><tbody>' +
+          utenti.map(function (u) {
+            return '<tr class="' + (u.attivo ? '' : 'spento') + '"><td><b>' + esc(u.nome) + '</b></td><td>' + esc(u.email) + '</td>' +
+              '<td>' + nomeRuolo(u.ruolo) + '</td>' +
+              '<td><span class="etichetta ' + (u.attivo ? 'ok' : 'no') + '">' + (u.attivo ? 'Attivo' : 'Sospeso') + '</span></td>' +
+              '<td class="num">' + u.piani + '</td><td class="num">' + u.viaggi + '</td><td>' + data(u.creato_il) + '</td>' +
+              '<td class="num azioni-utente">' +
+                '<button class="btn-testo" data-ruolo="' + u.id + '">' + (u.ruolo === 'admin' ? 'Rendi operatore' : 'Rendi titolare') + '</button>' +
+                '<button class="btn-testo" data-pw="' + u.id + '">Nuova password</button>' +
+                '<button class="btn-testo" data-sosp="' + u.id + '">' + (u.attivo ? 'Sospendi' : 'Riattiva') + '</button>' +
+                '<button class="btn-testo pericolo" data-elimina="' + u.id + '">Elimina</button>' +
+              '</td></tr>';
+          }).join('') + '</tbody></table></div>'
+          : '<div class="vuoto"><h2>Nessun utente</h2><p>Aggiungi il primo utente dell’azienda.</p></div>') +
+        '<form class="pannello" id="form-utente" novalidate><h2 style="margin-bottom:6px">Nuovo utente</h2>' +
+        '<p class="nota" style="margin-bottom:16px">Il titolare gestisce mezzi, piani e viaggi e vede l’elenco degli utenti. L’operatore calcola e salva piani e viaggi. Comunica tu le credenziali: al primo accesso l’utente potrà cambiare la password.</p><div class="griglia-form">' +
           '<label class="campo">Nome<input type="text" name="nome"></label>' +
           '<label class="campo">Email<input type="email" name="email"></label>' +
           '<label class="campo">Password iniziale<input type="text" name="password" placeholder="almeno 8 caratteri"></label>' +
           '<label class="campo">Ruolo<select name="ruolo"><option value="operatore">Operatore</option><option value="admin">Titolare</option></select></label>' +
         '</div><p class="errore" id="err"></p><button class="btn btn-primario" type="submit">Aggiungi utente</button></form>');
+
+      function trova(id) { return utenti.filter(function (u) { return u.id === Number(id); })[0]; }
+      function ricarica() { vistaUtentiAzienda(aid); }
+
       main.querySelector('#form-utente').onsubmit = function (e) {
         e.preventDefault();
-        api('POST', '/api/utenti', valoriForm(this)).then(function () { avvisa('Utente aggiunto'); vistaUtenti(); })
+        api('POST', '/api/aziende/' + aid + '/utenti', valoriForm(this)).then(function () { avvisa('Utente aggiunto'); ricarica(); })
           .catch(function (err) { main.querySelector('#err').textContent = err.message; });
       };
-      main.querySelectorAll('[data-stato]').forEach(function (b) {
+      main.querySelectorAll('[data-ruolo]').forEach(function (b) {
         b.onclick = function () {
-          api('PATCH', '/api/utenti/' + b.dataset.stato, { attivo: b.dataset.attivo !== 'true' }).then(vistaUtenti).catch(function (err) { avvisa(err.message); });
+          var u = trova(b.dataset.ruolo), nuovo = u.ruolo === 'admin' ? 'operatore' : 'admin';
+          api('PATCH', base + u.id, { ruolo: nuovo }).then(function () { avvisa(u.nome + ' ora è ' + nomeRuolo(nuovo).toLowerCase()); ricarica(); })
+            .catch(function (err) { avvisa(err.message); });
         };
       });
       main.querySelectorAll('[data-pw]').forEach(function (b) {
         b.onclick = function () {
-          var pw = prompt('Nuova password per questo utente (almeno 8 caratteri):');
-          if (!pw) return;
-          api('PATCH', '/api/utenti/' + b.dataset.pw, { password: pw }).then(function () { avvisa('Password aggiornata'); }).catch(function (err) { avvisa(err.message); });
+          var u = trova(b.dataset.pw);
+          dialogo({
+            titolo: 'Nuova password', pulsante: 'Imposta password',
+            testo: '<p>Imposta una nuova password per <b>' + esc(u.nome) + '</b> (' + esc(u.email) + '). Comunicagliela tu: potrà cambiarla da “Il mio account”.</p>',
+            campo: { etichetta: 'Nuova password (almeno 8 caratteri)', tipo: 'text' },
+            azione: function (pw) { return api('PATCH', base + u.id, { password: pw }); }
+          }).then(function (ok) { if (ok) avvisa('Password aggiornata per ' + u.nome); });
+        };
+      });
+      main.querySelectorAll('[data-sosp]').forEach(function (b) {
+        b.onclick = function () {
+          var u = trova(b.dataset.sosp);
+          if (!u.attivo) {
+            api('PATCH', base + u.id, { attivo: true }).then(function () { avvisa(u.nome + ' riattivato'); ricarica(); }).catch(function (err) { avvisa(err.message); });
+            return;
+          }
+          dialogo({
+            titolo: 'Sospendere l’utente?', pulsante: 'Sospendi',
+            testo: '<p><b>' + esc(u.nome) + '</b> (' + esc(u.email) + ') non potrà più accedere, anche se è già collegato. I suoi dati restano salvati e puoi riattivarlo quando vuoi.</p>',
+            azione: function () { return api('PATCH', base + u.id, { attivo: false }); }
+          }).then(function (ok) { if (ok) { avvisa(u.nome + ' sospeso'); ricarica(); } });
+        };
+      });
+      main.querySelectorAll('[data-elimina]').forEach(function (b) {
+        b.onclick = function () {
+          var u = trova(b.dataset.elimina);
+          dialogo({
+            titolo: 'Eliminare l’utente?', pulsante: 'Elimina definitivamente', pericolo: true,
+            testo: '<p>Stai per eliminare <b>' + esc(u.nome) + '</b> (' + esc(u.email) + ') da ' + esc(az.nome) + '. Non potrà più accedere e l’operazione <b>non si può annullare</b>.</p>' +
+              ((u.piani || u.viaggi) ? '<p>I suoi ' + u.piani + ' piani e ' + u.viaggi + ' viaggi salvati restano all’azienda, senza autore.</p>' : '') +
+              '<p>Se vuoi solo bloccarlo per un periodo, usa “Sospendi”.</p>',
+            campo: { etichetta: 'Chiave di conferma', tipo: 'password', attr: 'inputmode="numeric"' },
+            azione: function (chiave) { return api('DELETE', base + u.id, { chiave: chiave }); }
+          }).then(function (ok) { if (ok) { avvisa(u.nome + ' eliminato'); ricarica(); } });
         };
       });
     }).catch(errorePagina);
@@ -1399,13 +1498,13 @@
         '<div class="testata"><div><h1>Aziende clienti</h1><p>' + aziende.length + ' aziende, di cui ' + attive + ' attive. Ogni azienda vede solo i propri mezzi, piani e utenti.</p></div></div>' +
         (aziende.length ? '<div class="pannello tabella-scroll"><table><thead><tr><th>Azienda</th><th>Titolare</th><th class="num">Utenti</th><th class="num">Mezzi</th><th class="num">Piani</th><th>Funzioni attive</th><th>Dal</th><th>Stato</th><th></th></tr></thead><tbody>' +
           aziende.map(function (a) {
-            return '<tr class="' + (a.attiva ? '' : 'spento') + '"><td><b>' + esc(a.nome) + '</b></td><td>' + esc(a.email_titolare || '') + '</td>' +
-              '<td class="num">' + a.utenti + '</td><td class="num">' + a.mezzi + '</td><td class="num">' + a.piani + '</td>' +
+            return '<tr class="' + (a.attiva ? '' : 'spento') + '"><td><a href="#/aziende/' + a.id + '"><b>' + esc(a.nome) + '</b></a></td><td>' + esc(a.email_titolare || '') + '</td>' +
+              '<td class="num"><a href="#/aziende/' + a.id + '">' + a.utenti + '</a></td><td class="num">' + a.mezzi + '</td><td class="num">' + a.piani + '</td>' +
               '<td class="funzioni-azienda">' + funzioni.map(function (f) {
                 return '<label class="spunta"><input type="checkbox" data-fz="' + a.id + '" data-id="' + f.id + '"' + (a.funzioni[f.id] ? ' checked' : '') + '> ' + esc(f.nome) + '</label>';
               }).join('') + '</td><td>' + data(a.creata_il) + '</td>' +
               '<td><span class="etichetta ' + (a.attiva ? 'ok' : 'no') + '">' + (a.attiva ? 'Attiva' : 'Sospesa') + '</span></td>' +
-              '<td class="num"><button class="btn-testo ' + (a.attiva ? 'pericolo' : '') + '" data-az="' + a.id + '" data-attiva="' + a.attiva + '">' + (a.attiva ? 'Sospendi' : 'Riattiva') + '</button></td></tr>';
+              '<td class="num" style="white-space:nowrap"><a class="btn-testo" href="#/aziende/' + a.id + '">Utenti</a><button class="btn-testo ' + (a.attiva ? 'pericolo' : '') + '" data-az="' + a.id + '" data-attiva="' + a.attiva + '">' + (a.attiva ? 'Sospendi' : 'Riattiva') + '</button></td></tr>';
           }).join('') + '</tbody></table></div>' : '') +
         '<form class="pannello" id="form-azienda" novalidate><h2 style="margin-bottom:6px">Nuova azienda cliente</h2>' +
         '<p class="nota" style="margin-bottom:16px">Crei l’azienda e il suo titolare. Comunica tu le credenziali al cliente: al primo accesso potrà cambiare la password.</p><div class="griglia-form">' +
@@ -1434,6 +1533,82 @@
           api('PATCH', '/api/aziende/' + b.dataset.az, { attiva: !attiva }).then(vistaAziende).catch(function (err) { avvisa(err.message); });
         };
       });
+    }).catch(errorePagina);
+  }
+
+  // ---------- Backup (super amministratore) ----------
+  var NOMI_TABELLE = [['aziende', 'Aziende'], ['utenti', 'Utenti'], ['mezzi', 'Mezzi'], ['complessi', 'Complessi veicolari'], ['colli_salvati', 'Colli salvati'], ['piani', 'Piani di carico'], ['viaggi', 'Viaggi']];
+
+  function dataOra(iso) {
+    var d = new Date(iso);
+    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }) + ' alle ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function vistaBackup() {
+    api('GET', '/api/backup/riepilogo').then(function (r) {
+      var main = guscio('backup',
+        '<div class="testata"><div><h1>Backup</h1><p>Scarica una copia completa dei dati di tutte le aziende e, in caso di problemi, ripristinala.</p></div></div>' +
+        '<section class="pannello">' +
+          '<h2>Scarica backup</h2>' +
+          '<p class="nota" style="margin:6px 0 16px">Un unico file con tutti i dati presenti oggi nel programma. Database attuale: ' + esc(r.dimensione) + '.</p>' +
+          '<div class="conteggi">' + NOMI_TABELLE.map(function (t) { return '<div><b>' + num(r.conta[t[0]] || 0) + '</b><span>' + t[1] + '</span></div>'; }).join('') + '</div>' +
+          '<div class="riga-azioni" style="margin-top:18px"><a class="btn btn-primario" id="scarica" href="/api/backup" download>Scarica backup completo</a></div>' +
+          '<p class="nota" style="margin-top:14px">Il file contiene i dati di tutti i clienti e le password (cifrate): conservalo in un posto sicuro, per esempio in una cartella protetta sul tuo computer e in una copia su un disco esterno o un cloud personale. Consiglio: scaricane uno a settimana e prima di ogni aggiornamento importante.</p>' +
+        '</section>' +
+        '<section class="pannello">' +
+          '<h2>Ripristina da backup</h2>' +
+          '<p class="nota" style="margin:6px 0 16px">Scegli un file di backup: prima di ripristinare vedrai cosa contiene.</p>' +
+          '<label class="btn" style="cursor:pointer">Scegli file di backup<input type="file" id="file-backup" accept=".json,application/json" hidden></label>' +
+          '<p class="errore" id="err-file"></p>' +
+          '<div id="anteprima"></div>' +
+        '</section>');
+
+      main.querySelector('#scarica').onclick = function () {
+        avvisa('Preparo il backup, il download parte tra qualche secondo');
+      };
+
+      main.querySelector('#file-backup').onchange = function () {
+        var file = this.files[0], err = main.querySelector('#err-file'), box = main.querySelector('#anteprima');
+        err.textContent = ''; box.innerHTML = '';
+        if (!file) return;
+        var lettore = new FileReader();
+        lettore.onload = function () {
+          var b;
+          try { b = JSON.parse(lettore.result); } catch (e) { err.textContent = 'Il file non è leggibile: non è un backup di Stiva.'; return; }
+          if (!b || b.formato !== 'stiva-backup' || !b.tabelle) { err.textContent = 'Il file non è un backup di Stiva.'; return; }
+          var aziende = b.tabelle.aziende || [];
+          box.innerHTML =
+            '<div class="anteprima-backup">' +
+              '<h3>Backup del ' + esc(dataOra(b.creato_il)) + '</h3>' +
+              '<p class="nota">File: ' + esc(file.name) + (b.creato_da ? ', scaricato da ' + esc(b.creato_da) : '') + '</p>' +
+              '<table class="confronto"><thead><tr><th></th><th class="num">Nel file</th><th class="num">Oggi nel programma</th></tr></thead><tbody>' +
+                NOMI_TABELLE.map(function (t) {
+                  var f = (b.tabelle[t[0]] || []).length, o = r.conta[t[0]] || 0;
+                  return '<tr><td>' + t[1] + '</td><td class="num"><b>' + num(f) + '</b></td><td class="num' + (o > f ? ' in-meno' : '') + '">' + num(o) + '</td></tr>';
+                }).join('') +
+              '</tbody></table>' +
+              (aziende.length ? '<p class="nota" style="margin-top:12px">Aziende nel file: ' + aziende.map(function (a) { return esc(a.nome); }).join(', ') + '.</p>' : '') +
+              '<div class="avviso" style="margin-top:16px"><b>Attenzione:</b> il ripristino sostituisce <b>tutti</b> i dati attuali di <b>tutte</b> le aziende con quelli del file. Tutto ciò che è stato inserito dopo il ' + esc(dataOra(b.creato_il)) + ' andrà perso. Se non sei sicuro, scarica prima un backup dello stato attuale.</div>' +
+              '<div class="riga-azioni"><button class="btn btn-pericolo" id="ripristina">Ripristina questo backup</button></div>' +
+            '</div>';
+          box.querySelector('#ripristina').onclick = function () {
+            dialogo({
+              titolo: 'Ripristinare il backup?', pulsante: 'Ripristina tutti i dati', pericolo: true,
+              testo: '<p>Tutti i dati attuali verranno sostituiti con quelli del backup del <b>' + esc(dataOra(b.creato_il)) + '</b>. L’operazione non si può annullare.</p>' +
+                '<p>Durante il ripristino gli utenti collegati potrebbero dover rientrare.</p>',
+              campo: { etichetta: 'Chiave di conferma', tipo: 'password', attr: 'inputmode="numeric"' },
+              azione: function (chiave) { return api('POST', '/api/backup/ripristina', { chiave: chiave, backup: b }); }
+            }).then(function (ok) {
+              if (!ok) return;
+              avvisa('Ripristino completato');
+              // La sessione potrebbe essere cambiata: ricarico il programma
+              setTimeout(function () { location.hash = '#/backup'; location.reload(); }, 1200);
+            });
+          };
+        };
+        lettore.onerror = function () { err.textContent = 'Impossibile leggere il file.'; };
+        lettore.readAsText(file);
+      };
     }).catch(errorePagina);
   }
 
@@ -1469,6 +1644,8 @@
     var admin = stato.utente.ruolo === 'superadmin';
     if (admin) {
       if (sez === 'account') return vistaAccount();
+      if (sez === 'backup') return vistaBackup();
+      if (sez === 'aziende' && parti[1]) return vistaUtentiAzienda(Number(parti[1]));
       return vistaAziende();
     }
     switch (sez) {

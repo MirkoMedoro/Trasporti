@@ -79,9 +79,21 @@ la voce **Usage** per il consumo reale.
 
 - **Super amministratore (tu)**: crea, sospende e riattiva le aziende clienti.
   Se un cliente non paga, sospendi l'azienda: i suoi utenti non entrano più,
-  ma i dati restano salvati.
-- **Titolare**: gestisce mezzi, piani e gli utenti della sua azienda.
-- **Operatore**: calcola, salva e stampa i piani di carico, gestisce i mezzi.
+  ma i dati restano salvati. Sei l'unico che crea gli utenti delle aziende:
+  da **Aziende clienti → Utenti** li aggiungi, cambi ruolo e password,
+  li sospendi o li elimini.
+- **Titolare**: gestisce mezzi, piani e viaggi della sua azienda e vede
+  l'elenco dei suoi utenti, senza poterli modificare.
+- **Operatore**: calcola, salva e stampa piani di carico e viaggi.
+
+Ogni azienda deve avere almeno un titolare attivo: il programma non permette
+di sospendere, eliminare o declassare l'ultimo.
+
+## Chiave di conferma per le eliminazioni
+
+Eliminare un utente richiede la chiave di conferma, per evitare cancellazioni
+accidentali. La chiave predefinita è `1234`. Per cambiarla, su Railway aggiungi
+nelle **Variables** del programma `CHIAVE_CONFERMA` con il valore che preferisci.
 
 ## Percorsi per camion (OpenRouteService)
 
@@ -107,3 +119,26 @@ OpenStreetMap sono pensate per un uso leggero).
 Nel pannello **Aziende clienti** ogni azienda ha le spunte delle funzioni
 ("Piano di carico", "Viaggi e costi", "Scadenze"). Togliendo la spunta, la funzione
 sparisce dal menu di quell'azienda e viene bloccata anche sul server.
+
+## Backup dei dati
+
+Dal pannello del super amministratore, voce **Backup**:
+
+- **Scarica backup completo** crea un file `stiva-backup-AAAA-MM-GG-HHMM.json`
+  con tutti i dati di tutte le aziende (aziende, utenti, mezzi, complessi,
+  colli salvati, piani di carico, viaggi, impostazioni e funzioni attive).
+- **Ripristina da backup**: scegli il file, controlla l'anteprima (data e
+  numero di dati nel file rispetto a oggi), poi conferma con la chiave di
+  conferma. Il ripristino sostituisce tutti i dati attuali. Se qualcosa va
+  storto, i dati attuali restano intatti.
+
+Consigli:
+
+- Scarica un backup almeno una volta a settimana e sempre prima di caricare
+  una nuova versione del programma.
+- Conserva i file in due posti diversi (per esempio il computer e un disco
+  esterno o un cloud personale). Contengono i dati di tutti i clienti:
+  tienili protetti.
+- Il backup del programma si aggiunge a quelli del database fatti da Railway,
+  non li sostituisce: nella pagina del database su Railway controlla quali
+  backup automatici offre il tuo piano.

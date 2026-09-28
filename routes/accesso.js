@@ -45,7 +45,7 @@ r.post('/login', async (req, res, next) => {
     if (!u || !(await bcrypt.compare(password, u.password_hash))) {
       return res.status(401).json({ errore: 'Email o password errate.' });
     }
-    if (!u.attivo) return res.status(403).json({ errore: 'Il tuo utente è stato disattivato.' });
+    if (!u.attivo) return res.status(403).json({ errore: 'Il tuo utente è sospeso. Contatta il tuo titolare o l’assistenza.' });
     if (u.ruolo !== 'superadmin' && !u.azienda_attiva) {
       return res.status(403).json({ errore: "L'account della tua azienda è sospeso. Contatta l'assistenza." });
     }

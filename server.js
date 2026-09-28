@@ -17,7 +17,9 @@ const { inizializza } = require('./db');
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '5mb' }));
+// Il ripristino del backup accetta file grandi: ha un suo lettore dedicato
+const leggiJson = express.json({ limit: '5mb' });
+app.use((req, res, next) => (req.path === '/api/backup/ripristina' ? next() : leggiJson(req, res, next)));
 app.use(cookieParser());
 
 app.use('/api', require('./routes/accesso'));
@@ -30,11 +32,13 @@ app.use('/api/piani', require('./routes/piani'));
 app.use('/api/percorsi', require('./routes/percorsi'));
 app.use('/api/viaggi', require('./routes/viaggi'));
 app.use('/api/impostazioni', require('./routes/impostazioni'));
+app.use('/api/backup', require('./routes/backup'));
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') return res.status(413).json({ errore: 'File troppo grande.' });
   console.error(err);
   res.status(500).json({ errore: 'Errore interno del server. Riprova tra poco.' });
 });

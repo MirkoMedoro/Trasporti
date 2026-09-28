@@ -38,7 +38,7 @@ async function richiediLogin(req, res, next) {
          FROM utenti u LEFT JOIN aziende a ON a.id = u.azienda_id
         WHERE u.id = $1`, [dati.uid]);
     const u = rows[0];
-    if (!u || !u.attivo) return res.status(401).json({ errore: 'Utente non attivo.' });
+    if (!u || !u.attivo) return res.status(401).json({ errore: 'Il tuo utente è sospeso o è stato eliminato.' });
     if (u.ruolo !== 'superadmin' && !u.azienda_attiva) {
       return res.status(403).json({ errore: "L'account della tua azienda è sospeso. Contatta l'assistenza." });
     }

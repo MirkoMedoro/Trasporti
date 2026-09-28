@@ -265,3 +265,27 @@ tr.riga-scelta td { background: #fff8e0; }
 .scelta-proprieta #campo-ditta { min-width: 260px; }
 .scelta-proprieta #campo-ditta[hidden] { display: none; }
 .etichetta-padroncino { background: #eef1f5; border-color: #cfd6df; color: #3d4652; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+
+/* Finestre di conferma */
+.dialogo { border: 0; padding: 0; border-radius: 6px; width: min(480px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.3); border-top: 5px solid var(--giallo); color: var(--inchiostro); }
+.dialogo-pericolo { border-top-color: var(--rosso); }
+.dialogo::backdrop { background: rgba(0,0,0,.45); }
+.dialogo form { padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+.dialogo h2 { font-size: 24px; }
+.dialogo-testo { display: flex; flex-direction: column; gap: 8px; color: var(--grigio); }
+.dialogo-testo b { color: var(--inchiostro); }
+.dialogo .errore { min-height: 0; margin: 0; }
+.dialogo .errore:empty { display: none; }
+.btn-pericolo { background: var(--rosso); border-color: var(--rosso); color: #fff; }
+.btn-pericolo:hover { background: #a92a17; border-color: #a92a17; }
+.azioni-utente { white-space: nowrap; }
+
+/* Backup */
+.conteggi { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); border: 1px solid var(--linea); border-radius: 4px; }
+.conteggi > div { padding: 12px 14px; border-right: 1px solid var(--linea); border-bottom: 1px solid var(--linea); display: flex; flex-direction: column; margin: 0 -1px -1px 0; }
+.conteggi b { font-family: var(--titoli); font-size: 26px; font-weight: 600; line-height: 1.1; }
+.conteggi span { font-size: 13px; color: var(--grigio); }
+.anteprima-backup { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--linea); max-width: 720px; }
+.anteprima-backup h3 { margin-bottom: 4px; }
+.confronto { margin-top: 12px; max-width: 460px; }
+.confronto td.in-meno { color: var(--rosso); font-weight: 600; }

@@ -120,6 +120,23 @@ Nel pannello **Aziende clienti** ogni azienda ha le spunte delle funzioni
 ("Piano di carico", "Calcolatore", "Viaggi e costi", "Scadenze", "Ottimizza giro"). Togliendo la spunta, la funzione
 sparisce dal menu di quell'azienda e viene bloccata anche sul server.
 
+## Calcolatore: misure da foto
+
+Nel Calcolatore il tasto **Leggi da foto** mostra un QR code:
+
+1. l'operatore lo inquadra con la fotocamera del telefono e tocca il link
+   (dal telefono non serve accedere, il collegamento vale 30 minuti);
+2. fotografa il foglio delle misure e preme **Invia al computer**;
+3. sul computer compaiono le righe lette (colli, misure, peso, non
+   sovrapponibile): si controllano e si inseriscono con **Usa queste righe**.
+
+Si può anche caricare una foto già presente sul computer. La lettura gratuita
+legge fogli stampati (tabelle con Colli / Lunghezza / Larghezza / Altezza /
+Peso, oppure righe come "3 bancali 120x80x150 450 kg"). Con la chiave
+`ANTHROPIC_API_KEY` si attiva la lettura intelligente, che legge anche i fogli
+scritti a mano. Le foto non vengono salvate: restano in memoria solo il tempo
+di passarle al computer.
+
 ## Ottimizza giro
 
 Menu **Strumenti → Ottimizza giro**. Si carica il PDF della distinta (o

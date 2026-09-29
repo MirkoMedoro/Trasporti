@@ -46,7 +46,8 @@
     });
   }
   function num(n, dec) {
-    return Number(n).toLocaleString('it-IT', { minimumFractionDigits: dec || 0, maximumFractionDigits: dec || 0 });
+    var s = Number(n).toLocaleString('it-IT', { minimumFractionDigits: dec || 0, maximumFractionDigits: dec || 0 });
+    return /^-0([,.]0+)?$/.test(s) ? s.slice(1) : s; // niente "-0"
   }
   function data(d) { return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }); }
   var timerToast;
@@ -1413,8 +1414,9 @@
 
       var main = guscio('tassato',
         '<div class="testata"><div><h1>Calcolatore</h1><p>Calcolo del volume reale, del peso tassato e dei metri lineari di una spedizione, con il prezzo da proporre al cliente. Inserisci i colli e i totali si aggiornano mentre scrivi.</p></div>' +
-        '<div class="riga-azioni"><button class="btn" id="t-nuovo">Nuovo calcolo</button></div></div>' +
-        '<section class="pannello">' +
+        '<div class="riga-azioni"><button class="btn btn-primario" id="t-foto">Leggi da foto</button><button class="btn" id="t-nuovo">Nuovo calcolo</button></div></div>' +
+        '<section class="pannello foto-misure" id="t-foto-box" hidden></section>' +
+        '<section class="pannello" id="t-tabella">' +
           '<div class="tassato-regole">' +
             '<label class="campo">1 m³ equivale a<span class="con-unita"><input type="number" min="1" step="1" id="t-rapporto" value="' + esc(t.rapporto) + '"><span>kg</span></span></label>' +
             '<label class="campo">Altezza tassata dei non sovrapponibili<span class="con-unita"><input type="number" min="50" step="1" id="t-altezzans" value="' + esc(t.altezzaNs) + '"><span>cm</span></span></label>' +
@@ -1604,6 +1606,145 @@
           .then(function () { avvisa('Valori predefiniti salvati per tutta l’azienda'); })
           .catch(function (err) { avvisa(err.message); });
       };
+      // --- misure da foto: dal telefono (QR code) o da un file sul computer ---
+      var fotoBox = main.querySelector('#t-foto-box'), fotoCodice = null, fotoTimer = null, fotoAi = false, fotoLettura = false;
+      function chiudiFoto() {
+        clearInterval(fotoTimer); fotoTimer = null;
+        if (fotoCodice) api('DELETE', '/api/foto/sessione/' + fotoCodice).catch(function () {});
+        fotoCodice = null; fotoBox.hidden = true; fotoBox.innerHTML = '';
+      }
+      function statoTelefono(testo, classe) {
+        var el = fotoBox.querySelector('#tf-stato');
+        if (el) { el.textContent = testo; el.className = 'stato-telefono ' + (classe || ''); }
+      }
+      function nuovoCollegamento() {
+        var qr = fotoBox.querySelector('#tf-qr');
+        qr.innerHTML = '<span class="nota">Preparo il collegamento…</span>';
+        statoTelefono('In attesa del telefono…');
+        clearInterval(fotoTimer);
+        return api('POST', '/api/foto/sessione').then(function (sess) {
+          fotoCodice = sess.codice;
+          var q = window.qrcode(0, 'M'); q.addData(sess.indirizzo); q.make();
+          qr.innerHTML = q.createSvgTag({ cellSize: 5, margin: 2, scalable: true, alt: 'QR code per collegare il telefono' });
+          fotoBox.querySelector('#tf-link').onclick = function (e) {
+            e.preventDefault();
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(sess.indirizzo).then(function () { avvisa('Link copiato: mandalo al telefono'); }, function () { window.prompt('Copia questo link:', sess.indirizzo); });
+            else window.prompt('Copia questo link:', sess.indirizzo);
+          };
+          fotoTimer = setInterval(controllaTelefono, 2000);
+        }).catch(function (e) { qr.innerHTML = '<span class="errore">' + esc(e.message) + '</span>'; });
+      }
+      function controllaTelefono() {
+        if (!document.body.contains(fotoBox) || !fotoCodice) { clearInterval(fotoTimer); return; }
+        api('GET', '/api/foto/sessione/' + fotoCodice).then(function (r) {
+          if (r.foto && r.foto.length) {
+            var f = r.foto[r.foto.length - 1];
+            statoTelefono('✓ Foto ricevuta dal telefono', 'ok');
+            leggiFotoMisure(f.tipo, f.dati);
+          } else if (r.telefono && !fotoLettura) statoTelefono('✓ Telefono collegato: scatta la foto e premi “Invia al computer”', 'ok');
+        }).catch(function () {
+          clearInterval(fotoTimer);
+          statoTelefono('Collegamento scaduto.', 'errore');
+          fotoBox.querySelector('#tf-qr').innerHTML = '<button class="btn" id="tf-rinnova">Nuovo QR code</button>';
+          fotoBox.querySelector('#tf-rinnova').onclick = nuovoCollegamento;
+        });
+      }
+      function immagineDaUrl(url) {
+        return new Promise(function (ok, ko) {
+          var img = new Image();
+          img.onload = function () { ok(img); };
+          img.onerror = function () { ko(new Error('Foto non leggibile.')); };
+          img.src = url;
+        });
+      }
+      function leggiFotoMisure(tipo, dati) {
+        var box = fotoBox.querySelector('#tf-risultato'), url = 'data:' + tipo + ';base64,' + dati;
+        var usaAi = fotoAi && fotoBox.querySelector('#tf-ai') && fotoBox.querySelector('#tf-ai').checked;
+        fotoLettura = true;
+        box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div><h3>Leggo le misure…</h3><p class="nota" id="tf-avanz">' +
+          (usaAi ? 'Lettura intelligente in corso, qualche secondo…' : 'Preparo la lettura…') + '</p></div></div>';
+        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        var avanza = function (testo) { var el = box.querySelector('#tf-avanz'); if (el) el.textContent = testo; };
+        var lettura = usaAi
+          ? api('POST', '/api/foto/leggi', { tipo: tipo, dati: dati }).then(function (r) { return r.righe; })
+          : immagineDaUrl(url).then(function (img) { return leggiScansione(paginaFoto(img), avanza); })
+            .then(function (righe) { return window.Misure.estraiMisure(righe).righe; });
+        lettura.then(function (righe) { fotoLettura = false; mostraMisureLette(url, righe, usaAi); })
+          .catch(function (e) {
+            fotoLettura = false;
+            box.innerHTML = '<p class="errore">Non sono riuscito a leggere la foto: ' + esc(e.message) + '</p>';
+          });
+      }
+      function mostraMisureLette(url, righe, daAi) {
+        var box = fotoBox.querySelector('#tf-risultato');
+        if (!righe.length) {
+          box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div><h3>Non ho trovato misure</h3>' +
+            '<p>Cerco righe come “3 bancali 120x80x150 450 kg” oppure una tabella con le colonne Colli, Lunghezza, Larghezza, Altezza, Peso.</p>' +
+            '<p class="nota">Rifai la foto più da vicino, dritta e con buona luce.' + (fotoAi ? ' Oppure prova la lettura intelligente.' : ' I fogli scritti a mano si leggono solo con la lettura intelligente.') + '</p></div></div>';
+          return;
+        }
+        var colli = righe.reduce(function (a, r) { return a + (Number(r.n) || 0); }, 0);
+        box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div>' +
+          '<h3>Trovate ' + righe.length + (righe.length === 1 ? ' riga' : ' righe') + ', ' + colli + ' colli</h3>' +
+          (daAi ? '' : '<p class="avviso-ocr">⚠ Controlla i numeri confrontandoli con la foto prima di usarli.</p>') +
+          '<div class="tabella-scroll"><table class="tab-colli"><thead><tr><th>Descrizione</th><th class="num">Colli</th><th class="num">Lungh.</th><th class="num">Largh.</th><th class="num">Alt.</th><th class="num">Peso collo</th><th>Non sovrapp.</th></tr></thead><tbody>' +
+          righe.map(function (r) {
+            return '<tr><td>' + esc(r.nome || '–') + '</td><td class="num">' + esc(r.n) + '</td><td class="num">' + esc(r.l) + '</td><td class="num">' + esc(r.p) + '</td><td class="num">' + esc(r.h) + '</td>' +
+              '<td class="num">' + (r.peso !== '' ? esc(r.peso) + ' kg' : '–') + '</td><td>' + (r.impilabile === false ? 'Sì' : '') + '</td></tr>';
+          }).join('') + '</tbody></table></div>' +
+          '<div class="riga-azioni"><button class="btn btn-primario" id="tf-sostituisci">Usa queste righe</button><button class="btn" id="tf-aggiungi">Aggiungi alle righe già inserite</button><button class="btn-testo" id="tf-scarta">Scarta</button></div>' +
+          '</div></div>';
+        function inserisci(sostituisci) {
+          var nuove = righe.map(function (r) {
+            var n = Number(r.n) || 1, peso = r.peso === '' ? '' : Number(r.peso);
+            if (peso !== '' && t.modoPeso === 'totale') peso = Math.round(peso * n * 10) / 10;
+            return { nome: r.nome || 'Collo', n: n, l: r.l, p: r.p, h: r.h, peso: peso, impilabile: r.impilabile !== false };
+          });
+          var vuote = t.righe.every(function (r) { return r.h === '' && r.peso === ''; });
+          t.righe = sostituisci || vuote ? nuove : t.righe.concat(nuove);
+          traccia('calcolatore_foto');
+          disegnaRighe();
+          box.innerHTML = '<p class="esito-ok">✓ ' + nuove.length + (nuove.length === 1 ? ' riga inserita' : ' righe inserite') + ' nel calcolo. Controllale nella tabella qui sotto.</p>';
+          main.querySelector('#t-tabella').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        box.querySelector('#tf-sostituisci').onclick = function () { inserisci(true); };
+        box.querySelector('#tf-aggiungi').onclick = function () { inserisci(false); };
+        box.querySelector('#tf-scarta').onclick = function () { box.innerHTML = ''; };
+      }
+      main.querySelector('#t-foto').onclick = function () {
+        if (!fotoBox.hidden) { chiudiFoto(); return; }
+        fotoBox.hidden = false;
+        fotoBox.innerHTML = '<p class="nota">Preparo il collegamento…</p>';
+        api('GET', '/api/foto/stato').catch(function () { return { ai: false }; }).then(function (st) {
+          fotoAi = !!st.ai;
+          fotoBox.innerHTML =
+            '<div class="testata-pannello"><h2>Leggi le misure da una foto</h2><button class="btn-testo" id="tf-chiudi">Chiudi</button></div>' +
+            '<div class="foto-collega">' +
+              '<div class="foto-qr" id="tf-qr"></div>' +
+              '<div class="foto-istruzioni"><h3>Con il telefono</h3>' +
+                '<ol class="passi"><li>Apri la fotocamera del telefono e inquadra questo codice.</li><li>Tocca il link che compare e fotografa il foglio delle misure.</li><li>Premi “Invia al computer”: le misure arrivano qui da sole.</li></ol>' +
+                '<p class="stato-telefono" id="tf-stato">In attesa del telefono…</p>' +
+                '<p class="nota">Dal telefono non serve accedere. Il codice vale 30 minuti. <a href="#" id="tf-link">Copia il link</a> per mandarlo con un messaggio.</p>' +
+                '<h3 style="margin-top:18px">Oppure da questo computer</h3>' +
+                '<label class="btn" style="cursor:pointer">Scegli una foto<input type="file" id="tf-file" accept="image/jpeg,image/png,image/webp" hidden></label>' +
+                (fotoAi ? '<label class="spunta" style="margin-top:12px"><input type="checkbox" id="tf-ai" checked> Lettura intelligente (legge anche i fogli scritti a mano)</label>'
+                  : '<p class="nota" style="margin-top:10px">Lettura gratuita: legge fogli stampati. Per i fogli scritti a mano serve la lettura intelligente.</p>') +
+              '</div>' +
+            '</div>' +
+            '<div id="tf-risultato"></div>';
+          fotoBox.querySelector('#tf-chiudi').onclick = chiudiFoto;
+          fotoBox.querySelector('#tf-file').onchange = function () {
+            var file = this.files[0]; this.value = '';
+            if (!file) return;
+            leggiFile(file, true).then(function (u) {
+              var parti = String(u).split(',');
+              leggiFotoMisure(file.type || 'image/jpeg', parti[1]);
+            });
+          };
+          nuovoCollegamento();
+        });
+      };
+
       main.querySelector('#t-nuovo').onclick = function () {
         var vecchio = t;
         stato.tassato = nuovoTassato({ rapporto: vecchio.rapporto, altezzaNs: vecchio.altezzaNs, arrotonda: vecchio.arrotonda, modoTariffa: vecchio.modoTariffa, tariffa: vecchio.tariffa, minimo: vecchio.minimo });

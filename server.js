@@ -23,7 +23,7 @@ const leggiJson = express.json({ limit: '5mb' });
 const leggiDocumenti = express.json({ limit: '30mb' });
 app.use((req, res, next) => {
   if (req.path === '/api/backup/ripristina') return next();
-  if (req.path === '/api/giri/leggi') return leggiDocumenti(req, res, next);
+  if (req.path === '/api/giri/leggi' || req.path === '/api/foto/leggi' || req.path.startsWith('/api/foto/telefono/')) return leggiDocumenti(req, res, next);
   return leggiJson(req, res, next);
 });
 app.use(cookieParser());
@@ -42,8 +42,11 @@ app.use('/api/backup', require('./routes/backup'));
 app.use('/api/attivita', require('./routes/attivita'));
 app.use('/api/statistiche', require('./routes/statistiche'));
 app.use('/api/giri', require('./routes/giri'));
+app.use('/api/foto', require('./routes/foto'));
 
 app.use(express.static(path.join(__dirname, 'public')));
+// Pagina del telefono per scattare le foto (si apre dal QR code, senza accesso)
+app.get('/scatta/:codice', (req, res) => res.sendFile(path.join(__dirname, 'public', 'scatta.html')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.use((err, req, res, next) => {

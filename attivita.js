@@ -23,6 +23,7 @@ const EVENTI = {
   calcolatore_calcolo: { nome: 'Fa un calcolo nel Calcolatore', tipo: 'azione', funzione: 'tassato' },
   calcolatore_copia: { nome: 'Copia il riepilogo del Calcolatore', tipo: 'azione', funzione: 'tassato' },
   calcolatore_carico: { nome: 'Passa dal Calcolatore al piano di carico', tipo: 'azione', funzione: 'tassato' },
+  calcolatore_foto: { nome: 'Legge le misure da una foto', tipo: 'azione', funzione: 'tassato' },
   viaggio_percorso: { nome: 'Calcola un percorso', tipo: 'azione', funzione: 'viaggi' },
   viaggio_salvato: { nome: 'Salva un viaggio', tipo: 'azione', funzione: 'viaggi' },
   mezzo_aggiunto: { nome: 'Aggiunge un mezzo', tipo: 'azione', funzione: 'mezzi' },
@@ -31,7 +32,7 @@ const EVENTI = {
 
 // Eventi che può inviare il browser (gli altri li registra il server da solo)
 const DAL_BROWSER = new Set(['sessione', 'pagina:carico', 'pagina:piani', 'pagina:tassato', 'pagina:viaggi', 'pagina:mezzi',
-  'pagina:scadenze', 'pagina:giri', 'giro_letto', 'giro_ottimizzato', 'carico_calcolo', 'carico_quale_mezzo', 'calcolatore_calcolo', 'calcolatore_copia', 'calcolatore_carico']);
+  'pagina:scadenze', 'pagina:giri', 'giro_letto', 'giro_ottimizzato', 'carico_calcolo', 'carico_quale_mezzo', 'calcolatore_calcolo', 'calcolatore_copia', 'calcolatore_carico', 'calcolatore_foto']);
 
 const CONSERVAZIONE_MESI = 13;
 

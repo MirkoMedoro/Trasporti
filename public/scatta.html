@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>Stiva · Foto misure</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --nero: #000; --bianco: #fff; --inchiostro: #1b1f24; --grigio: #5f6670; --linea: #e1e4e8; --fondo: #f6f7f8;
+      --giallo: #f5b800; --rosso: #c8341e; --verde: #1f8a5b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Barlow', 'Helvetica Neue', Arial, sans-serif; font-size: 17px; line-height: 1.45; color: var(--inchiostro); background: var(--fondo); }
+    header { background: var(--nero); color: var(--bianco); padding: 14px 16px; display: flex; align-items: center; gap: 10px; }
+    .logo { width: 22px; height: 22px; background: var(--giallo); border-radius: 3px; position: relative; }
+    .logo::after { content: ''; position: absolute; left: 4px; right: 4px; bottom: 4px; height: 4px; background: var(--nero); }
+    header b { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-size: 24px; letter-spacing: .3px; }
+    main { padding: 18px 16px 40px; max-width: 520px; margin: 0 auto; }
+    h1 { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-size: 28px; line-height: 1.1; margin: 4px 0 6px; }
+    p { margin: 0 0 12px; }
+    .nota { color: var(--grigio); font-size: 15px; }
+    .collegato { display: inline-flex; align-items: center; gap: 6px; background: #e6f4ec; color: var(--verde); border-radius: 20px; padding: 4px 12px; font-weight: 600; font-size: 15px; margin-bottom: 14px; }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 56px; border-radius: 10px; border: 2px solid var(--nero);
+      background: var(--bianco); color: var(--nero); font: inherit; font-weight: 600; font-size: 19px; cursor: pointer; margin-top: 12px; text-decoration: none; }
+    .btn-primario { background: var(--giallo); border-color: var(--giallo); }
+    .btn:disabled { opacity: .5; }
+    .consigli { background: var(--bianco); border: 1px solid var(--linea); border-radius: 10px; padding: 12px 14px; margin-top: 18px; font-size: 15px; }
+    .consigli ul { margin: 6px 0 0; padding-left: 20px; }
+    .anteprima { width: 100%; border-radius: 10px; border: 1px solid var(--linea); background: var(--bianco); display: block; margin-top: 8px; }
+    .esito { border-radius: 10px; padding: 14px; margin-top: 14px; font-weight: 600; }
+    .esito.ok { background: #e6f4ec; color: var(--verde); }
+    .esito.errore { background: #fbeae7; color: var(--rosso); }
+    [hidden] { display: none !important; }
+    input[type=file] { display: none; }
+  </style>
+</head>
+<body>
+  <header><span class="logo" aria-hidden="true"></span><b>Stiva</b></header>
+  <main>
+    <div id="caricamento"><p class="nota">Collegamento in corso…</p></div>
+
+    <div id="errore-collegamento" hidden>
+      <h1>Collegamento non valido</h1>
+      <p id="errore-testo"></p>
+    </div>
+
+    <div id="pronto" hidden>
+      <span class="collegato">● Collegato al computer</span>
+      <h1>Fotografa il foglio delle misure</h1>
+      <p class="nota" id="chi"></p>
+
+      <div id="scelta">
+        <label class="btn btn-primario" for="scatta">📷 Scatta la foto</label>
+        <input type="file" id="scatta" accept="image/*" capture="environment">
+        <label class="btn" for="galleria">Scegli dalla galleria</label>
+        <input type="file" id="galleria" accept="image/*">
+        <div class="consigli">
+          <b>Per una lettura migliore</b>
+          <ul>
+            <li>Inquadra tutto il foglio, dritto dall'alto.</li>
+            <li>Buona luce, senza ombre e senza riflessi.</li>
+            <li>Il foglio deve riempire quasi tutta la foto.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div id="controllo" hidden>
+        <img id="anteprima" class="anteprima" alt="Foto scattata">
+        <button class="btn btn-primario" id="invia">Invia al computer</button>
+        <button class="btn" id="rifai">Rifai la foto</button>
+      </div>
+
+      <div id="esito" class="esito" hidden></div>
+      <button class="btn" id="altra" hidden>Scatta un'altra foto</button>
+    </div>
+  </main>
+
+  <script>
+  (function () {
+    var codice = decodeURIComponent(location.pathname.split('/').pop() || '');
+    var $ = function (id) { return document.getElementById(id); };
+    var fotoPronta = null;
+
+    function mostra(id) { ['caricamento', 'errore-collegamento', 'pronto'].forEach(function (x) { $(x).hidden = x !== id; }); }
+    function erroreCollegamento(testo) { $('errore-testo').textContent = testo; mostra('errore-collegamento'); }
+    function esito(testo, ok) { var e = $('esito'); e.textContent = testo; e.className = 'esito ' + (ok ? 'ok' : 'errore'); e.hidden = false; }
+
+    fetch('/api/foto/telefono/' + encodeURIComponent(codice)).then(function (r) {
+      return r.json().then(function (d) { if (!r.ok) throw new Error(d.errore || 'Collegamento non valido.'); return d; });
+    }).then(function (d) {
+      $('chi').textContent = (d.azienda ? d.azienda + (d.utente ? ' · ' + d.utente : '') + '. ' : '') + 'La foto arriva nel Calcolatore sul computer.';
+      mostra('pronto');
+    }).catch(function (e) { erroreCollegamento(e.message); });
+
+    // Riduce la foto (i telefoni fanno foto enormi): basta il lato lungo a 2400 px
+    function prepara(file) {
+      return new Promise(function (ok, ko) {
+        var url = URL.createObjectURL(file), img = new Image();
+        img.onload = function () {
+          var lato = Math.max(img.naturalWidth, img.naturalHeight), k = Math.min(1, 2400 / lato);
+          var c = document.createElement('canvas');
+          c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+          var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          ok(c.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); ko(new Error('Non riesco ad aprire la foto. Riprova.')); };
+        img.src = url;
+      });
+    }
+
+    function scelta(e) {
+      var file = e.target.files[0]; e.target.value = '';
+      if (!file) return;
+      $('esito').hidden = true; $('altra').hidden = true;
+      prepara(file).then(function (dataUrl) {
+        fotoPronta = dataUrl;
+        $('anteprima').src = dataUrl;
+        $('scelta').hidden = true; $('controllo').hidden = false;
+        $('invia').disabled = false; $('invia').textContent = 'Invia al computer';
+      }).catch(function (err) { esito(err.message, false); });
+    }
+    $('scatta').onchange = scelta;
+    $('galleria').onchange = scelta;
+
+    $('rifai').onclick = function () { fotoPronta = null; $('controllo').hidden = true; $('scelta').hidden = false; };
+
+    $('invia').onclick = function () {
+      if (!fotoPronta) return;
+      var b = this; b.disabled = true; b.textContent = 'Invio in corso…';
+      fetch('/api/foto/telefono/' + encodeURIComponent(codice), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: 'image/jpeg', dati: fotoPronta.split(',')[1] })
+      }).then(function (r) {
+        return r.json().then(function (d) { if (!r.ok) throw new Error(d.errore || 'Invio non riuscito.'); return d; });
+      }).then(function () {
+        fotoPronta = null;
+        $('controllo').hidden = true;
+        esito('✓ Foto inviata. Guarda il computer: le misure compaiono nel Calcolatore.', true);
+        $('altra').hidden = false;
+      }).catch(function (e) {
+        b.disabled = false; b.textContent = 'Riprova a inviare';
+        esito(e.message, false);
+      });
+    };
+    $('altra').onclick = function () { $('esito').hidden = true; this.hidden = true; $('scelta').hidden = false; };
+  })();
+  </script>
+</body>
+</html>

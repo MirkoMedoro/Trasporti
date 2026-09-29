@@ -19,24 +19,29 @@
   var RE_TIPO = /\b(bancal[ei]|pallet|plt|cass[ae]|cartone|cartoni|scatol[ae]|gabbi[ae]|fust[io]|rotol[io]|bobin[ae]|sacc[ho]i?|coll[io]|pacc[ho]i?|big\s?bag|cestone|cestoni|tubi|profilati)\b/i;
 
   // ---------- modo tabella ----------
+  // Intestazioni riconosciute: italiano, inglese, tedesco, francese, spagnolo
+  // (le packing list estere usano "Length / Width / Height", "Qty", "Gross weight"...)
   var COLONNE = {
-    n: /^(colli|collo|n\.?\s?colli|q\.?\s?t[aà]\.?|quantit[aà]|qta|n[°º.]?|nr\.?|num\.?|pz\.?|pezzi)$/i,
-    l: /^(lungh?\.?|lunghezza|l\.?|lung\.?\s?cm|l\s?\(?cm\)?)$/i,
-    p: /^(largh?\.?|larghezza|p\.?|prof\.?|profondit[aà]|w|larg\.?\s?cm|p\s?\(?cm\)?)$/i,
-    h: /^(alt\.?|altezza|h\.?|alt\.?\s?cm|h\s?\(?cm\)?)$/i,
-    peso: /^(peso|peso\s?kg|kg|peso\s?\(?kg\)?|peso\s?collo|peso\s?cad\.?|peso\s?lordo)$/i,
-    pesoTot: /^(peso\s?tot\.?|peso\s?totale|tot\.?\s?kg|totale\s?kg)$/i,
-    misure: /^(misure|dimensioni|dim\.?|l\s?x\s?p\s?x\s?h|lxpxh|misure\s?cm)$/i,
-    nome: /^(descrizione|tipo|imballo|merce|articolo|contenuto)$/i,
-    ns: /^(non\s?sovr.*|n\.?\s?s\.?|sovrapp.*|impil.*)$/i,
-    note: /^(note|annotazioni)$/i
+    n: /^(colli|collo|n\.?\s?colli|q\.?\s?t[aà]\.?|quantit[aà]|qta|n[°º.]?|nr\.?|num\.?|pz\.?|pezzi|nr\.?\s?packing|n\.?\s?of\s?(packages|pkgs?|pcs)|packing|packages?|pkgs?|pcs\.?|pieces?|qty\.?|quantity|units?|no\.?\s?of\s?units|anzahl|st[uü]ck|colis|nombre|nb\.?\s?colis|bultos|cantidad|piezas)$/i,
+    l: /^(lungh?\.?|lunghezza|lung\.?|l\.?|length|len\.?|lenght|lg\.?|l[aä]nge|longueur|long\.?|largo)$/i,
+    p: /^(largh?\.?|larghezza|larg\.?|p\.?|prof\.?|profondit[aà]|w\.?|width|wide|depth|breite|br\.?|largeur|ancho)$/i,
+    h: /^(alt\.?|altezza|h\.?|height|heigth|high|hgt\.?|h[oö]he|hauteur|haut\.?|alto|altura)$/i,
+    peso: /^(peso|peso\s?collo|peso\s?cad\.?|peso\s?lordo|peso\s?bruto|peso\s?netto|kg|kgs|weight|gross\s?weight|g\.?\s?w\.?|gross|net\s?weight|n\.?\s?w\.?|wt\.?|weight\s?per\s?(unit|piece|pkg)|gewicht|brutto(gewicht)?|poids|poids\s?brut)$/i,
+    pesoTot: /^(peso\s?tot\.?|peso\s?totale|tot\.?\s?kg|totale\s?kg|total\s?weight|total\s?gross\s?weight|tot\.?\s?weight|gesamtgewicht|poids\s?total)$/i,
+    misure: /^(misure|dimensioni|dim\.?|l\s?x\s?p\s?x\s?h|lxpxh|misure\s?cm|dimensions?|dims?\.?|size|measures?|l\s?x\s?w\s?x\s?h|lxwxh|abmessungen|ma[sß]e)$/i,
+    nome: /^(descrizione|tipo|imballo|merce|articolo|contenuto|description|type|packing\s?type|package\s?type|goods|item|beschreibung|d[eé]signation)$/i,
+    stack: /^(stackable|sovrapponibile|impilabile|stapelbar|gerbable)$/i,
+    ns: /^(non\s?sovr.*|n\.?\s?s\.?|sovrapp.*|impil.*|non[\s-]?stackable|not\s?stackable|no\s?stack)$/i,
+    note: /^(note|annotazioni|notes?|remarks?|bemerkung|remarques)$/i
   };
+  // "Length (cm)", "Weight kg", "Peso (kg)" → si toglie l'unità di misura per riconoscere la colonna
+  function senzaUnita(t) { return t.replace(/\s*[\(\[]?\s*\b(cm|mm|mt|m|kg|kgs|lbs?|in)\b\s*[\)\]]?\.?$/i, '').trim(); }
   function pulisciIntest(t) { return String(t || '').trim().replace(/^[\[\(|'‘"“]+|[\]\)|'’"”:_]+$/g, '').replace(/\s+/g, ' '); }
   function intestazione(r) {
     var colonne = [], usate = {};
     r.celle.forEach(function (c) {
-      var t = pulisciIntest(c.testo);
-      var k = Object.keys(COLONNE).filter(function (x) { return !usate[x] && COLONNE[x].test(t); })[0];
+      var t = pulisciIntest(c.testo), t2 = senzaUnita(t);
+      var k = Object.keys(COLONNE).filter(function (x) { return !usate[x] && (COLONNE[x].test(t) || (t2 && COLONNE[x].test(t2))); })[0];
       if (k) usate[k] = true;
       colonne.push({ k: k || 'altro', x: c.x, fine: c.fine != null ? c.fine : c.x + t.length * 5 });
     });
@@ -57,10 +62,13 @@
     return colonne.filter(function (h) { return centro >= h.da && centro < h.a; })[0] || colonne[colonne.length - 1];
   }
   function daTabella(righe, i0, colonne) {
-    var out = [];
+    var out = [], vuote = 0, conPeso = colonne.some(function (c) { return c.k === 'peso' || c.k === 'pesoTot'; })
+    var conColli = colonne.some(function (c) { return c.k === 'n'; });
     for (var i = i0 + 1; i < righe.length; i++) {
       var r = righe[i], v = {};
       if (intestazione(r)) continue;
+      // due righe di fila senza misure dopo la tabella: la tabella è finita (firma, indirizzi, telefoni…)
+      if (vuote >= 2 && out.length) break;
       r.celle.forEach(function (c) { var h = colonnaDi(colonne, c); v[h.k] = (v[h.k] ? v[h.k] + ' ' : '') + c.testo; });
       if (/^\s*(tot|totale|totali)\b/i.test(r.testo)) continue;
       var riga = { nome: '', n: null, l: null, p: null, h: null, peso: null, impilabile: true };
@@ -74,12 +82,14 @@
       var peso = v.peso != null ? num((String(v.peso).match(/\d[\d.,]*/) || [])[0]) : null;
       var pesoTot = v.pesoTot != null ? num((String(v.pesoTot).match(/\d[\d.,]*/) || [])[0]) : null;
       riga.peso = peso != null ? peso : (pesoTot != null ? arrotonda(pesoTot / riga.n) : null);
-      riga.impilabile = !(RE_NS.test(v.ns || '') || /^(s[iì]|x|✓|v)$/i.test(String(v.ns || '').trim()) || RE_NS.test(v.note || '') || RE_NS.test(v.nome || ''));
+      var sovr = String(v.stack || '').trim();
+      riga.impilabile = !(/^(no|n|false|non?)$/i.test(sovr) || RE_NS.test(v.ns || '') || /^(s[iì]|x|✓|v)$/i.test(String(v.ns || '').trim()) || RE_NS.test(v.note || '') || RE_NS.test(v.nome || ''));
       var tipo = String(v.nome || v.altro || '').match(RE_TIPO);
       riga.nome = v.nome ? pulisciNome(v.nome) : (tipo ? maiuscola(tipo[1]) : '');
       var dims = [riga.l, riga.p, riga.h].filter(function (x) { return x != null; }).length;
-      riga.incompleta = incerta(r) || dims < 3 || riga.peso == null;
-      if (dims >= 2 || (dims >= 1 && riga.peso != null)) out.push(riga);
+      riga.incompleta = incerta(r) || dims < 3 || (conPeso && riga.peso == null) || (conColli && !(n > 0));
+      if (dims >= 2 || (dims >= 1 && riga.peso != null)) { out.push(riga); vuote = 0; }
+      else vuote++;
     }
     return out;
   }
@@ -180,9 +190,10 @@
     return num(s);
   }
   var PAROLE = [
-    { k: 'n', re: /\b(colli|collo|q\.?t[aà]|quantit|pz|pezzi)/i },
-    { k: 'l', re: /\blung/i }, { k: 'p', re: /\b(larg|prof)/i }, { k: 'h', re: /\balt/i },
-    { k: 'peso', re: /\b(peso|kg)\b/i }, { k: 'idx', re: /^(n\.?|nr\.?|pos\.?|riga|#)$/i }
+    { k: 'n', re: /\b(colli|collo|q\.?t[aà]|quantit|pz|pezzi|packing|packages?|pkgs?|pcs|pieces?|qty|anzahl|colis|bultos)/i },
+    { k: 'l', re: /\b(lung|length|lenght|l[aä]nge|longueur)/i }, { k: 'p', re: /\b(larg|prof|width|depth|breite|ancho)/i },
+    { k: 'h', re: /\b(alt|height|heigth|h[oö]he|hauteur)/i },
+    { k: 'peso', re: /\b(peso|kgs?|weight|gewicht|poids)\b/i }, { k: 'idx', re: /^(n\.?|nr\.?|pos\.?|riga|#)$/i }
   ];
   function daColonneNumeriche(righe) {
     // righe di dati: almeno 3 numeri e soprattutto numeri

@@ -131,8 +131,10 @@ Nel Calcolatore il tasto **Leggi da foto** mostra un QR code:
    sovrapponibile): si controllano e si inseriscono con **Usa queste righe**.
 
 Si può anche caricare una foto già presente sul computer. La lettura gratuita
-legge fogli stampati (tabelle con Colli / Lunghezza / Larghezza / Altezza /
-Peso, oppure righe come "3 bancali 120x80x150 450 kg"). Con la chiave
+legge fogli stampati: tabelle con Colli / Lunghezza / Larghezza / Altezza /
+Peso anche in inglese, tedesco, francese e spagnolo (NrPacking, Qty, Length,
+Width, Height, Weight…), oppure righe come "3 bancali 120x80x150 450 kg".
+Le righe lette con poca sicurezza sono evidenziate in giallo da controllare. Con la chiave
 `ANTHROPIC_API_KEY` si attiva la lettura intelligente, che legge anche i fogli
 scritti a mano. Le foto non vengono salvate: restano in memoria solo il tempo
 di passarle al computer.

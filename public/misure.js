@@ -78,6 +78,7 @@
       var tipo = String(v.nome || v.altro || '').match(RE_TIPO);
       riga.nome = v.nome ? pulisciNome(v.nome) : (tipo ? maiuscola(tipo[1]) : '');
       var dims = [riga.l, riga.p, riga.h].filter(function (x) { return x != null; }).length;
+      riga.incompleta = incerta(r) || dims < 3 || riga.peso == null;
       if (dims >= 2 || (dims >= 1 && riga.peso != null)) out.push(riga);
     }
     return out;
@@ -85,7 +86,8 @@
 
   // ---------- modo righe libere ----------
   function normalizza(t) {
-    return String(t || '').replace(/[×✕✖*]/g, 'x').replace(/(\d)\s*[Xx]\s*(?=\d)/g, '$1x')
+    // la lettura da foto a volte scrive la "x" come "XxX", "×", "*"
+    return String(t || '').replace(/[×✕✖*]/g, 'x').replace(/(\d)\s*[Xx]{1,3}\s*(?=\d)/g, '$1x')
       .replace(/(\d),(\d)/g, '$1.$2').replace(/\bcm\b\.?/gi, ' ').replace(/\s+/g, ' ').trim();
   }
   var RE_DIM = /(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/i;
@@ -108,6 +110,33 @@
       n = colliDavanti ? a : z;
       d.inizio = q4.index; d.fine = q4.index + q4[0].length;
     } else d = dimensioniDa(t);
+    if (!d) {
+      // le "x" perse nella lettura ("22 22 15 – 2 kgs"): se c'è un peso in kg, i tre numeri
+      // subito prima sono le misure (un quarto numero davanti è il numero dei colli). Da controllare.
+      var pk0 = t.match(/(\d+(?:\.\d+)?)\s*kgs?\b/i);
+      if (pk0) {
+        var prima0 = t.slice(0, pk0.index), numeri0 = [], re0 = /\d+(?:\.\d+)?/g, m0;
+        while ((m0 = re0.exec(prima0))) numeri0.push({ v: Number(m0[0]), i: m0.index, f: m0.index + m0[0].length });
+        if (numeri0.length >= 3) {
+          var tre = numeri0.slice(-3);
+          d = { l: tre[0].v, p: tre[1].v, h: tre[2].v, inizio: tre[0].i, fine: tre[2].f, dubbia: true };
+          if (numeri0.length >= 4) { var q0 = numeri0[numeri0.length - 4].v; if (q0 === Math.floor(q0) && q0 > 0 && q0 < 100) n = q0; }
+        }
+      }
+    }
+    if (!d && !/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(t)) {
+      // ultima possibilità: riga fatta quasi solo di numeri ("35 35x20 8", "22x22 15 A kgs"):
+      // i primi tre sono le misure, quello dopo il peso. Mai scartare una riga che sembra di misure.
+      var lettere = (t.replace(/\b(cm|kgs?|x|n|nr|pz|colli|collo|peso|tot\w*|ns)\b/gi, ' ').match(/[a-zà-ù]/gi) || []).length;
+      var numeri1 = [], re1 = /\d+(?:\.\d+)?/g, m1;
+      while ((m1 = re1.exec(t))) numeri1.push({ v: Number(m1[0]), i: m1.index, f: m1.index + m1[0].length });
+      var validi = numeri1.length && numeri1.every(function (x) { return x.v > 0 && x.v <= 3000; });
+      var segni = /x|kg/i.test(t) || numeri1.length >= 4;
+      if (validi && lettere <= 4 && numeri1.length >= 3 && numeri1.length <= 5 && segni) {
+        var da = numeri1.length === 5 ? 1 : 0;   // 5 numeri: colli, L, P, H, peso
+        d = { l: numeri1[da].v, p: numeri1[da + 1].v, h: numeri1[da + 2].v, inizio: numeri1[da].i, fine: numeri1[da + 2].f, dubbia: true };
+      }
+    }
     if (!d) return null;
     var prima = t.slice(0, d.inizio), dopo = t.slice(d.fine);
     if (n == null) {
@@ -128,7 +157,7 @@
     }
     if (peso != null && totale) peso = arrotonda(peso / n);
     var tipo = (prima + ' ' + dopo).match(RE_TIPO);
-    return { nome: tipo ? maiuscola(tipo[1]) : '', n: n, l: d.l, p: d.p, h: d.h, peso: peso, impilabile: !RE_NS.test(t) };
+    return { nome: tipo ? maiuscola(tipo[1]) : '', n: n, l: d.l, p: d.p, h: d.h, peso: peso, impilabile: !RE_NS.test(t), incompleta: !!d.dubbia || peso == null };
   }
 
   // Misure in metri (1.2 x 0.8) o in millimetri (1200 x 800): tutto in centimetri
@@ -142,6 +171,100 @@
     return righe;
   }
 
+  // ---------- modo colonne di numeri (intestazioni illeggibili o assenti) ----------
+  // Le colonne si riconoscono dalla posizione dei numeri riga per riga; il significato viene dalle
+  // intestazioni lette anche solo in parte, altrimenti dall'ordine abituale: N. riga, Colli, L, P, H, Peso.
+  function numeroCella(t) {
+    var s = String(t || '').trim().replace(/^[^\d]+|[^\d]+$/g, '');
+    if (!/^\d{1,5}([.,]\d{1,3})?$/.test(s)) return null;
+    return num(s);
+  }
+  var PAROLE = [
+    { k: 'n', re: /\b(colli|collo|q\.?t[aà]|quantit|pz|pezzi)/i },
+    { k: 'l', re: /\blung/i }, { k: 'p', re: /\b(larg|prof)/i }, { k: 'h', re: /\balt/i },
+    { k: 'peso', re: /\b(peso|kg)\b/i }, { k: 'idx', re: /^(n\.?|nr\.?|pos\.?|riga|#)$/i }
+  ];
+  function daColonneNumeriche(righe) {
+    // righe di dati: almeno 3 numeri e soprattutto numeri
+    var dati = [];
+    righe.forEach(function (r, i) {
+      var nums = r.celle.map(function (c) { return { c: c, v: numeroCella(c.testo) }; });
+      var quanti = nums.filter(function (x) { return x.v != null; }).length;
+      var testo = r.celle.filter(function (c) { return numeroCella(c.testo) == null; }).map(function (c) { return c.testo; }).join(' ');
+      if (quanti >= 3 && quanti >= r.celle.length * 0.5 && !/\b(tot|totale|totali)\b/i.test(r.testo) && !/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(r.testo))
+        dati.push({ i: i, r: r, nums: nums.filter(function (x) { return x.v != null; }), testo: testo });
+    });
+    if (dati.length < 2) return [];
+    // colonne: si raggruppano i centri delle celle numeriche
+    var centri = [];
+    dati.forEach(function (d) { d.nums.forEach(function (x) { var f = x.c.fine != null ? x.c.fine : x.c.x + 12; centri.push((x.c.x + f) / 2); }); });
+    centri.sort(function (a, b) { return a - b; });
+    var larghezza = Math.max.apply(null, centri) - Math.min.apply(null, centri) || 1;
+    var soglia = Math.max(8, larghezza / 30), colonne = [];
+    centri.forEach(function (c) {
+      var ultima = colonne[colonne.length - 1];
+      if (ultima && c - ultima.ultimo <= soglia) { ultima.valori.push(c); ultima.ultimo = c; }
+      else colonne.push({ valori: [c], ultimo: c });
+    });
+    colonne = colonne.filter(function (c) { return c.valori.length >= Math.max(2, dati.length * 0.3); }).map(function (c) {
+      var v = c.valori.slice().sort(function (a, b) { return a - b; });
+      return { centro: v[Math.floor(v.length / 2)], da: v[0], a: v[v.length - 1], k: null, numeri: [] };
+    });
+    if (colonne.length < 3) return [];
+    function colonnaDelNumero(x) {
+      var f = x.c.fine != null ? x.c.fine : x.c.x + 12, c = (x.c.x + f) / 2, best = null, d = Infinity;
+      colonne.forEach(function (col) { var dd = c < col.da ? col.da - c : (c > col.a ? c - col.a : 0); if (dd < d) { d = dd; best = col; } });
+      return d <= soglia * 2 ? best : null;
+    }
+    dati.forEach(function (d, riga) { d.valori = new Map(); d.nums.forEach(function (x) { var col = colonnaDelNumero(x); if (col && !d.valori.has(col)) { d.valori.set(col, x.v); col.numeri.push({ riga: riga, v: x.v }); } }); });
+    // intestazioni lette (anche a pezzi) sopra la prima riga di dati
+    var primo = dati[0].i;
+    righe.slice(Math.max(0, primo - 4), primo).forEach(function (r) {
+      r.celle.forEach(function (c) {
+        var f = c.fine != null ? c.fine : c.x + c.testo.length * 5, parole = c.testo.split(/\s+/), pos = 0;
+        parole.forEach(function (w) {
+          var cx = c.x + (f - c.x) * (pos + w.length / 2) / Math.max(1, c.testo.length);
+          pos += w.length + 1;
+          var tipo = PAROLE.filter(function (p) { return p.re.test(w); })[0];
+          if (!tipo) return;
+          var best = null, d = Infinity;
+          colonne.forEach(function (col) { var dd = Math.abs(col.centro - cx); if (dd < d) { d = dd; best = col; } });
+          var gia = colonne.some(function (col) { return col.k === tipo.k; });
+          if (best && !best.k && !gia && d <= soglia * 3) best.k = tipo.k;
+        });
+      });
+    });
+    // colonna del numero di riga: 1, 2, 3… crescente
+    var libere = colonne.filter(function (c) { return !c.k; });
+    if (libere.length && !colonne.some(function (c) { return c.k === 'idx'; })) {
+      var prima = libere[0], crescenti = 0;
+      for (var q = 1; q < prima.numeri.length; q++) if (prima.numeri[q].v > prima.numeri[q - 1].v) crescenti++;
+      var uguali = prima.numeri.filter(function (x) { return x.v === x.riga + 1; }).length;
+      if (prima.numeri.length >= 3 && colonne.indexOf(prima) === 0 && crescenti >= (prima.numeri.length - 1) * 0.7 &&
+          (libere.length >= 5 || uguali >= prima.numeri.length * 0.5)) prima.k = 'idx';
+    }
+    // le altre in ordine: Colli, L, P, H, Peso
+    libere = colonne.filter(function (c) { return !c.k; });
+    var ruoli = ['n', 'l', 'p', 'h', 'peso'].filter(function (k) { return !colonne.some(function (c) { return c.k === k; }); });
+    if (libere.length < ruoli.length && ruoli[0] === 'n') {
+      var mediana = function (col) { var v = col.numeri.map(function (x) { return x.v; }).sort(function (a, b) { return a - b; }); return v[Math.floor(v.length / 2)]; };
+      if (!(libere.length && mediana(libere[0]) <= 20)) ruoli.shift(); // la prima non sono colli: manca la colonna colli
+    }
+    libere.forEach(function (c, k) { c.k = ruoli[k] || 'altro'; });
+    return dati.map(function (d) {
+      var v = {};
+      d.valori.forEach(function (val, col) { if (col.k && col.k !== 'idx' && col.k !== 'altro' && v[col.k] == null) v[col.k] = val; });
+      var n = v.n && v.n > 0 && v.n < 1000 ? v.n : null;
+      var tipo = d.testo.match(RE_TIPO);
+      return { nome: tipo ? maiuscola(tipo[1]) : '', n: n || 1, l: v.l, p: v.p, h: v.h, peso: v.peso,
+        impilabile: !RE_NS.test(d.r.testo), incompleta: incerta(d.r) || v.l == null || v.p == null || v.h == null || v.peso == null || !n };
+    });
+  }
+
+  // numeri letti con poca sicurezza dalla foto: la riga va controllata
+  var SICUREZZA_MINIMA = 80;
+  function incerta(r) { return r && r.confMin != null && r.confMin < SICUREZZA_MINIMA; }
+
   function estraiMisure(righe) {
     var risultato = null, modo = 'righe';
     for (var i = 0; i < righe.length && !risultato; i++) {
@@ -152,12 +275,16 @@
       risultato = [];
       righe.forEach(function (r) {
         var x = daRiga(r.testo.replace(/\s*\|\s*/g, ' '));
-        if (x) risultato.push(x);
+        if (x) { if (incerta(r)) x.incompleta = true; risultato.push(x); }
       });
     }
+    // tabella di numeri senza intestazioni leggibili: se trova più righe, vince lei
+    var numeriche = daColonneNumeriche(righe);
+    if (numeriche.length > risultato.length) { risultato = numeriche; modo = 'colonne'; }
     return { modo: modo, righe: unita(risultato).map(function (r) {
       return { nome: r.nome || '', n: r.n || 1, l: r.l == null ? '' : r.l, p: r.p == null ? '' : r.p, h: r.h == null ? '' : r.h,
-        peso: r.peso == null ? '' : r.peso, impilabile: r.impilabile !== false };
+        peso: r.peso == null ? '' : r.peso, impilabile: r.impilabile !== false,
+        incompleta: !!r.incompleta || r.l == null || r.p == null || r.h == null };
     }) };
   }
 

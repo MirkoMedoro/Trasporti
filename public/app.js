@@ -1464,7 +1464,7 @@
           function cella(k, min, passo) {
             return '<td class="num"><input type="number" min="' + min + '" step="' + (passo || 1) + '" data-k="' + k + '" value="' + esc(r[k]) + '"></td>';
           }
-          return '<tr data-i="' + i + '">' +
+          return '<tr data-i="' + i + '"' + (r.controlla ? ' class="da-controllare" title="Letta con difficoltà dalla foto: controlla i numeri"' : '') + '>' +
             '<td><input type="text" data-k="nome" value="' + esc(r.nome) + '" aria-label="Descrizione"></td>' +
             cella('n', 1) + cella('l', 1) + cella('p', 1) + cella('h', 1) + cella('peso', 0, 0.1) +
             '<td class="centro"><input type="checkbox" data-k="nonSovrapp"' + (r.impilabile === false ? ' checked' : '') + ' aria-label="Non sovrapponibile"></td>' +
@@ -1556,6 +1556,7 @@
       tbody.addEventListener('input', function (e) {
         var k = e.target.dataset.k; if (!k) return;
         var r = t.righe[Number(e.target.closest('tr').dataset.i)];
+        if (r.controlla) { r.controlla = false; e.target.closest('tr').classList.remove('da-controllare'); e.target.closest('tr').removeAttribute('title'); }
         if (k === 'nonSovrapp') { r.impilabile = !e.target.checked; disegnaRighe(); return; }
         r[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
         aggiorna();
@@ -1667,7 +1668,7 @@
         var avanza = function (testo) { var el = box.querySelector('#tf-avanz'); if (el) el.textContent = testo; };
         var lettura = usaAi
           ? api('POST', '/api/foto/leggi', { tipo: tipo, dati: dati }).then(function (r) { return r.righe; })
-          : immagineDaUrl(url).then(function (img) { return leggiScansione(paginaFoto(img), avanza); })
+          : immagineDaUrl(url).then(function (img) { return leggiScansione(paginaFoto(img), avanza, { perLinea: true }); })
             .then(function (righe) { return window.Misure.estraiMisure(righe).righe; });
         lettura.then(function (righe) { fotoLettura = false; mostraMisureLette(url, righe, usaAi); })
           .catch(function (e) {
@@ -1686,10 +1687,11 @@
         var colli = righe.reduce(function (a, r) { return a + (Number(r.n) || 0); }, 0);
         box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div>' +
           '<h3>Trovate ' + righe.length + (righe.length === 1 ? ' riga' : ' righe') + ', ' + colli + ' colli</h3>' +
-          (daAi ? '' : '<p class="avviso-ocr">⚠ Controlla i numeri confrontandoli con la foto prima di usarli.</p>') +
+          (daAi ? '' : '<p class="avviso-ocr">⚠ Controlla i numeri confrontandoli con la foto prima di usarli.' +
+            (righe.filter(function (r) { return r.incompleta; }).length ? ' Le righe evidenziate sono state lette con difficoltà: guardale bene.' : '') + '</p>') +
           '<div class="tabella-scroll"><table class="tab-colli"><thead><tr><th>Descrizione</th><th class="num">Colli</th><th class="num">Lungh.</th><th class="num">Largh.</th><th class="num">Alt.</th><th class="num">Peso collo</th><th>Non sovrapp.</th></tr></thead><tbody>' +
           righe.map(function (r) {
-            return '<tr><td>' + esc(r.nome || '–') + '</td><td class="num">' + esc(r.n) + '</td><td class="num">' + esc(r.l) + '</td><td class="num">' + esc(r.p) + '</td><td class="num">' + esc(r.h) + '</td>' +
+            return '<tr' + (r.incompleta && !daAi ? ' class="da-controllare"' : '') + '><td>' + (r.incompleta && !daAi ? '⚠ ' : '') + esc(r.nome || '–') + '</td><td class="num">' + esc(r.n) + '</td><td class="num">' + esc(r.l) + '</td><td class="num">' + esc(r.p) + '</td><td class="num">' + esc(r.h) + '</td>' +
               '<td class="num">' + (r.peso !== '' ? esc(r.peso) + ' kg' : '–') + '</td><td>' + (r.impilabile === false ? 'Sì' : '') + '</td></tr>';
           }).join('') + '</tbody></table></div>' +
           '<div class="riga-azioni"><button class="btn btn-primario" id="tf-sostituisci">Usa queste righe</button><button class="btn" id="tf-aggiungi">Aggiungi alle righe già inserite</button><button class="btn-testo" id="tf-scarta">Scarta</button></div>' +
@@ -1698,7 +1700,7 @@
           var nuove = righe.map(function (r) {
             var n = Number(r.n) || 1, peso = r.peso === '' ? '' : Number(r.peso);
             if (peso !== '' && t.modoPeso === 'totale') peso = Math.round(peso * n * 10) / 10;
-            return { nome: r.nome || 'Collo', n: n, l: r.l, p: r.p, h: r.h, peso: peso, impilabile: r.impilabile !== false };
+            return { nome: r.nome || 'Collo', n: n, l: r.l, p: r.p, h: r.h, peso: peso, impilabile: r.impilabile !== false, controlla: !!r.incompleta && !daAi };
           });
           var vuote = t.righe.every(function (r) { return r.h === '' && r.peso === ''; });
           t.righe = sostituisci || vuote ? nuove : t.righe.concat(nuove);
@@ -1835,7 +1837,7 @@
     });
   }
   // pagine: [{ disegna(canvas) -> Promise, larghezzaPt }]; avanzamento(testo)
-  function leggiScansione(pagine, avanzamento) {
+  function leggiScansione(pagine, avanzamento, opzioni) {
     var worker = null, tutte = [];
     return caricaOcr().then(function (T) {
       avanzamento('Preparo il lettore (la prima volta scarica circa 5 MB)…');
@@ -1863,10 +1865,10 @@
             return worker.recognize(canvas, { rotateAuto: true }, { blocks: true });
           }).then(function (r) {
             var parole = [];
-            (r.data.blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (p) { (p.lines || []).forEach(function (l) { (l.words || []).forEach(function (x) {
-              parole.push({ testo: x.text, conf: x.confidence, x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1 });
+            (r.data.blocks || []).forEach(function (b, bi) { (b.paragraphs || []).forEach(function (p, pi) { (p.lines || []).forEach(function (l, li) { (l.words || []).forEach(function (x) {
+              parole.push({ testo: x.text, conf: x.confidence, x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1, linea: bi + '.' + pi + '.' + li });
             }); }); }); });
-            tutte = tutte.concat(window.Giro.righeDaOcr(parole, canvas.width / pg.larghezzaPt, n + 1));
+            tutte = tutte.concat(window.Giro.righeDaOcr(parole, canvas.width / pg.larghezzaPt, n + 1, opzioni));
           });
         });
       }, Promise.resolve());

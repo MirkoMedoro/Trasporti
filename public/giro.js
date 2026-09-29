@@ -48,8 +48,10 @@
   // Righe dal testo riconosciuto in una scansione o foto (lettura gratuita nel browser).
   // parole: [{testo, x0, y0, x1, y1}] in pixel; scala: pixel per punto PDF.
   // Restituisce righe nello stesso formato di righeDaPdf, così vale la stessa lettura della tabella.
-  function righeDaOcr(parole, scala, pagina) {
-    scala = scala || 1;
+  // opzioni.perLinea: le righe sono quelle del lettore (w.linea), senza regrupparle per altezza.
+  // Serve per gli elenchi di misure: una parola con il riquadro sballato non finisce su un'altra riga.
+  function righeDaOcr(parole, scala, pagina, opzioni) {
+    scala = scala || 1; opzioni = opzioni || {};
     var ps = parole.filter(function (w) {
       var t = w && String(w.testo || '').trim();
       if (!t) return false;
@@ -58,15 +60,25 @@
       if (/^[|!il'‘’"“”°*.,:;_\-=\[\]]+$/i.test(t) && t.length <= 2) return false;
       return true;
     }).map(function (w) {
-      return { testo: String(w.testo).trim(), x0: w.x0 / scala, x1: w.x1 / scala, y0: w.y0 / scala, y1: w.y1 / scala,
+      return { testo: String(w.testo).trim(), linea: w.linea, conf: w.conf, x0: w.x0 / scala, x1: w.x1 / scala, y0: w.y0 / scala, y1: w.y1 / scala,
         yc: (w.y0 + w.y1) / 2 / scala, h: Math.max(1, (w.y1 - w.y0) / scala) };
     });
     if (!ps.length) return [];
     var altezze = ps.map(function (w) { return w.h; }).sort(function (a, b) { return a - b; });
     var hTipica = altezze[Math.floor(altezze.length / 2)];
-    ps.sort(function (a, b) { return a.yc - b.yc; });
     var righe = [];
-    ps.forEach(function (w) {
+    if (opzioni.perLinea && ps.every(function (w) { return w.linea != null; })) {
+      var perId = {};
+      ps.forEach(function (w) {
+        if (!perId[w.linea]) { perId[w.linea] = { parole: [] }; righe.push(perId[w.linea]); }
+        perId[w.linea].parole.push(w);
+      });
+      // l'altezza della riga è la mediana delle sue parole (una parola storta non la sposta)
+      righe.forEach(function (r) { var y = r.parole.map(function (w) { return w.yc; }).sort(function (a, b) { return a - b; }); r.yc = y[Math.floor(y.length / 2)]; });
+      righe.sort(function (a, b) { return a.yc - b.yc; });
+    }
+    else ps.sort(function (a, b) { return a.yc - b.yc; });
+    if (!righe.length) ps.forEach(function (w) {
       var r = righe[righe.length - 1];
       // stessa riga se il centro è vicino (tollera un foglio leggermente storto)
       if (r && Math.abs(w.yc - r.yc) < hTipica * 0.55) { r.parole.push(w); r.yc = (r.yc * (r.parole.length - 1) + w.yc) / r.parole.length; }
@@ -83,7 +95,10 @@
       });
       celle = celle.map(function (c) { return { x: c.x, fine: c.fine, parole: c.parole, testo: c.testo.replace(/[|]/g, ' ').replace(/\s+/g, ' ').trim() }; })
         .filter(function (c) { return c.testo && !/^[\-_=.,:;'"`~]+$/.test(c.testo); });
-      return { y: -r.yc, celle: celle, testo: celle.map(function (c) { return c.testo; }).join(' | '), pagina: pagina || 1 };
+      // sicurezza più bassa tra le parole con cifre: serve a segnalare i numeri letti male
+      var confNumeri = r.parole.filter(function (w) { return /\d/.test(w.testo) && w.conf != null; }).map(function (w) { return w.conf; });
+      return { y: -r.yc, celle: celle, testo: celle.map(function (c) { return c.testo; }).join(' | '), pagina: pagina || 1,
+        confMin: confNumeri.length ? Math.min.apply(null, confNumeri) : null };
     }).filter(function (r) { return r.celle.length; });
   }
 

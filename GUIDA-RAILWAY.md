@@ -131,8 +131,11 @@ località e provincia dicono dove andare; i pallet finiscono nelle note.
 - Scrivi l'indirizzo di **partenza (deposito)** e premi **Usa questi valori
   come predefiniti**: la volta dopo è già compilato.
 - Scegli come deve girare l'autista: **Tutto insieme** (meno km possibili)
-  oppure **Prima tutte le consegne, poi i ritiri**. Le tappe segnate
-  "Urgente" vengono fatte per prime.
+  oppure **Prima tutte le consegne, poi i ritiri**.
+- Colonna **Ordine** di ogni tappa: "Libero" (decide il programma), "1ª",
+  "2ª"… (posizione fissa: quelle tappe si fanno per prime in quell'ordine) o
+  "Presto" (subito dopo le fisse). Il resto del giro viene ottimizzato
+  partendo dall'ultima tappa fissa.
 - Il risultato mostra km risparmiati, gasolio, orari, la mappa, i link per
   Google Maps sul telefono dell'autista e il passaggio a "Viaggi e costi".
 

@@ -451,3 +451,5 @@ tr.riga-deposito td { background: var(--fondo); }
 .tab-giro input[data-k=note] { width: 220px; }
 .tab-giro input[data-k=peso] { width: 84px; }
 .avviso-ocr { color: var(--giallo-scuro); font-weight: 600; }
+.sel-ordine.fissato { border-color: var(--giallo-scuro); background: #fff7d6; font-weight: 600; }
+.etichetta-fissa { background: var(--nero); color: var(--bianco); }

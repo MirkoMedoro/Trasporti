@@ -1871,7 +1871,7 @@
         '</div>' +
         '<label class="spunta" style="margin-top:14px"><input type="checkbox" id="giro-rientro"' + (g.rientro ? ' checked' : '') + '> Rientro al deposito a fine giro</label>' +
         (admin ? '<button class="btn btn-piccolo" id="giro-predefiniti" style="margin-top:14px">Usa questi valori come predefiniti</button>' : '') +
-        '<div class="barra-calcolo"><p class="nota">Le tappe segnate “Urgente” vengono fatte per prime.</p><button class="btn btn-primario" id="giro-ottimizza">Ottimizza il giro</button></div>' +
+        '<div class="barra-calcolo"><p class="nota">Nella colonna “Ordine” puoi fissare le tappe da fare per 1ª, 2ª… e quelle da fare appena possibile (“Presto”): il resto lo ordina il programma.</p><button class="btn btn-primario" id="giro-ottimizza">Ottimizza il giro</button></div>' +
         '<p class="errore" id="giro-err"></p><p class="nota" id="giro-avanzamento"></p>' +
         '</section>' +
         '<div id="giro-risultato"></div>');
@@ -1881,19 +1881,23 @@
       function disegnaTappe() {
         var n = g.tappe.length;
         sez.innerHTML = '<div class="testa-grafico"><div><h2>2. Tappe' + (n ? ' (' + n + ')' : '') + '</h2><p class="nota">Controlla tipo e indirizzi: puoi correggere, aggiungere o togliere tappe. L’ordine qui è quello della distinta.</p></div></div>' +
-          (n ? '<div class="tabella-scroll"><table class="tab-colli tab-giro"><thead><tr><th>N.</th><th>Tipo</th><th>Cliente</th><th>Indirizzo</th><th class="num">Colli</th><th class="num">Peso</th><th>Note</th><th title="Da fare per prima">Urgente</th><th>Posizione</th><th></th></tr></thead><tbody>' +
+          (n ? '<div class="tabella-scroll"><table class="tab-colli tab-giro"><thead><tr><th>N.</th><th title="Libero: lo decide il programma. 1ª, 2ª…: posizione fissa. Presto: subito dopo le tappe fisse">Ordine</th><th>Tipo</th><th>Cliente</th><th>Indirizzo</th><th class="num">Colli</th><th class="num">Peso</th><th>Note</th><th>Posizione</th><th></th></tr></thead><tbody>' +
             g.tappe.map(function (t, i) {
               var pos = t.trovato === 'si' ? '<span class="pos ok" title="' + esc(t.trovatoNome || '') + '">✓ trovata</span>'
                 : t.trovato === 'comune' ? '<span class="pos approx" title="Trovato solo il comune: posizione approssimata">≈ solo comune</span>'
                 : t.trovato === 'no' ? '<span class="pos no">✗ non trovata</span>' : '<span class="nota">da cercare</span>';
               return '<tr data-i="' + i + '"><td class="num">' + (i + 1) + '</td>' +
+                '<td><select data-k="ordine" class="sel-ordine' + (t.ordineFisso || t.urgente ? ' fissato' : '') + '">' +
+                  '<option value=""' + (!t.ordineFisso && !t.urgente ? ' selected' : '') + '>Libero</option>' +
+                  g.tappe.map(function (_, k) { return '<option value="' + (k + 1) + '"' + (Number(t.ordineFisso) === k + 1 ? ' selected' : '') + '>' + (k + 1) + 'ª</option>'; }).join('') +
+                  '<option value="presto"' + (!t.ordineFisso && t.urgente ? ' selected' : '') + '>Presto</option>' +
+                '</select></td>' +
                 '<td><select data-k="tipo"><option value=""' + (!t.tipo ? ' selected' : '') + '>–</option><option value="consegna"' + (t.tipo === 'consegna' ? ' selected' : '') + '>Consegna</option><option value="ritiro"' + (t.tipo === 'ritiro' ? ' selected' : '') + '>Ritiro</option></select></td>' +
                 '<td><input type="text" data-k="nome" value="' + esc(t.nome) + '"></td>' +
                 '<td><input type="text" data-k="indirizzo" class="campo-indirizzo" value="' + esc(t.indirizzo) + '"></td>' +
                 '<td class="num"><input type="number" min="0" data-k="colli" value="' + esc(t.colli) + '"></td>' +
                 '<td class="num"><input type="number" min="0" data-k="peso" value="' + esc(t.peso) + '"></td>' +
                 '<td><input type="text" data-k="note" value="' + esc(t.note) + '"></td>' +
-                '<td class="centro"><input type="checkbox" data-k="urgente"' + (t.urgente ? ' checked' : '') + '></td>' +
                 '<td>' + pos + '</td><td><button class="btn-testo pericolo" data-togli="' + i + '">Togli</button></td></tr>';
             }).join('') + '</tbody></table></div>' : '<div class="esito-vuoto">Nessuna tappa: carica la distinta o scrivi le tappe qui sopra.</div>') +
           '<div class="aggiungi-colli"><button class="btn btn-piccolo" id="giro-aggiungi">Aggiungi tappa</button></div>';
@@ -1902,6 +1906,12 @@
       sez.addEventListener('input', function (e) {
         var k = e.target.dataset.k; if (!k) return;
         var t = g.tappe[Number(e.target.closest('tr').dataset.i)];
+        if (k === 'ordine') {
+          var v = e.target.value;
+          t.ordineFisso = /^\d+$/.test(v) ? Number(v) : null; t.urgente = v === 'presto';
+          e.target.classList.toggle('fissato', !!v);
+          return;
+        }
         t[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
         if (k === 'indirizzo') { t.lat = t.lon = null; t.trovato = ''; }
         g.risultato = null;
@@ -2029,6 +2039,12 @@
           return api('POST', '/api/percorsi/matrice', { punti: punti });
         }).then(function (mat) {
           avanz.textContent = 'Cerco l’ordine migliore…';
+          var usati = {};
+          g.tappe.forEach(function (t, i) {
+            if (!t.ordineFisso) return;
+            if (usati[t.ordineFisso]) throw new Error('Le tappe ' + usati[t.ordineFisso] + ' e ' + (i + 1) + ' hanno tutte e due l’ordine ' + t.ordineFisso + 'ª: cambiane una.');
+            usati[t.ordineFisso] = i + 1;
+          });
           var ris = window.Giro.ottimizzaGiro(mat.km, { tappe: g.tappe, rientro: g.rientro, consegnePrima: g.consegnePrima });
           var seq = [0].concat(ris.ordine.map(function (i) { return i + 1; }));
           if (g.rientro) seq.push(0);
@@ -2088,7 +2104,7 @@
           var arrivo = oraPiu(g.partenza, t);
           t += sosta;
           return '<tr><td class="num"><span class="ordine-num' + (tp.tipo === 'ritiro' ? ' ritiro' : '') + '">' + (k + 1) + '</span></td><td>' + arrivo + '</td>' +
-            '<td>' + (tp.tipo ? '<span class="etichetta tipo-' + tp.tipo + '">' + (tp.tipo === 'ritiro' ? 'Ritiro' : 'Consegna') + '</span>' : '') + (tp.urgente ? ' <span class="etichetta rev-vicina">Urgente</span>' : '') + '</td>' +
+            '<td>' + (tp.tipo ? '<span class="etichetta tipo-' + tp.tipo + '">' + (tp.tipo === 'ritiro' ? 'Ritiro' : 'Consegna') + '</span>' : '') + (tp.ordineFisso ? ' <span class="etichetta etichetta-fissa">' + tp.ordineFisso + 'ª fissa</span>' : tp.urgente ? ' <span class="etichetta rev-vicina">Presto</span>' : '') + '</td>' +
             '<td><b>' + esc(tp.nome || '–') + '</b><div class="nota">' + esc(tp.indirizzo) + (tp.trovato === 'comune' ? ' <span class="pos approx">≈ posizione approssimata</span>' : '') + '</div></td>' +
             '<td class="num">' + num(tr.km, 1) + ' km</td>' +
             '<td class="num">' + (tp.colli !== '' ? num(tp.colli) + ' colli' : '') + (tp.peso !== '' ? '<div class="nota">' + num(tp.peso) + ' kg</div>' : '') + '</td>' +
@@ -2105,8 +2121,11 @@
           '<div class="cruscotto cruscotto-viaggio">' +
             '<div class="evidenza"><div class="valore">' + num(R.km, 0) + ' km</div><div class="desc">giro ottimizzato' + (R.rientro ? ', con rientro' : '') + '</div></div>' +
             '<div><div class="valore">' + num(R.kmOriginale, 0) + ' km</div><div class="desc">nell’ordine della distinta</div></div>' +
-            '<div><div class="valore">' + num(kmRisp, 0) + ' km</div><div class="desc">risparmiati (' + (R.kmOriginale ? num(kmRisp / R.kmOriginale * 100, 0) : 0) + '%)</div></div>' +
-            '<div><div class="valore">' + euro(litri * gas) + '</div><div class="desc">di gasolio risparmiato (' + num(litri, 0) + ' litri a ' + num(consumo, 1) + ' l/100 km)</div></div>' +
+            (R.km > R.kmOriginale + 0.5
+              ? '<div><div class="valore">+' + num(R.km - R.kmOriginale, 0) + ' km</div><div class="desc">in più rispetto alla distinta, per rispettare l’ordine che hai scelto</div></div>' +
+                '<div><div class="valore">' + euro((R.km - R.kmOriginale) * consumo / 100 * gas) + '</div><div class="desc">di gasolio in più (' + num((R.km - R.kmOriginale) * consumo / 100, 0) + ' litri a ' + num(consumo, 1) + ' l/100 km)</div></div>'
+              : '<div><div class="valore">' + num(kmRisp, 0) + ' km</div><div class="desc">risparmiati (' + (R.kmOriginale ? num(kmRisp / R.kmOriginale * 100, 0) : 0) + '%)</div></div>' +
+                '<div><div class="valore">' + euro(litri * gas) + '</div><div class="desc">di gasolio risparmiato (' + num(litri, 0) + ' litri a ' + num(consumo, 1) + ' l/100 km)</div></div>') +
             '<div><div class="valore">' + durata(tTot / 60) + '</div><div class="desc">guida ' + durata(tGuida / 60) + ' + soste; ' + (R.rientro ? 'rientro' : 'fine') + ' alle ' + fine + '</div></div>' +
           '</div>' +
           (kmRisp < 0.5 ? '<div class="avviso giallo">L’ordine della distinta era già il migliore possibile.</div>' : '') +

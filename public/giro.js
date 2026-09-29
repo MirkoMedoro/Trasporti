@@ -663,7 +663,33 @@
   }
 
   // opz: { tappe: [{tipo, urgente}], rientro, consegnePrima }
+  // Tappe con ordine fisso ("fai questa per prima, questa per seconda"): vanno in testa nell'ordine
+  // indicato; il resto si ottimizza partendo dall'ultima tappa fissa (il rientro resta al deposito).
   function ottimizzaGiro(D, opz) {
+    var n = opz.tappe.length, fisse = [], libere = [];
+    opz.tappe.forEach(function (t, i) { if (Number(t.ordineFisso) > 0) fisse.push(i); else libere.push(i); });
+    if (!fisse.length) return ottimizzaLibero(D, opz);
+    fisse.sort(function (a, b) { return Number(opz.tappe[a].ordineFisso) - Number(opz.tappe[b].ordineFisso); });
+    var originale = [];
+    for (var i = 1; i <= n; i++) originale.push(i);
+    var kmFisse = 0, prec = 0;
+    fisse.forEach(function (i) { kmFisse += D[prec][i + 1]; prec = i + 1; });
+    var ordine = fisse.slice(), km, metodo = 'esatto';
+    if (!libere.length) km = kmFisse + (opz.rientro ? D[prec][0] : 0);
+    else {
+      // matrice ridotta: 0 = si parte dall'ultima fissa (righe) e si rientra al deposito (colonne)
+      var nodi = [null].concat(libere.map(function (i) { return i + 1; }));
+      var D2 = nodi.map(function (da, r) {
+        return nodi.map(function (a, c) { return (r === 0 ? D[prec] : D[da])[c === 0 ? 0 : a]; });
+      });
+      var parte = ottimizzaLibero(D2, { tappe: libere.map(function (i) { return opz.tappe[i]; }), rientro: opz.rientro, consegnePrima: opz.consegnePrima });
+      ordine = ordine.concat(parte.ordine.map(function (k) { return libere[k]; }));
+      km = kmFisse + parte.km; metodo = parte.metodo;
+    }
+    return { metodo: metodo, ordine: ordine, km: km, kmOriginale: costo(D, originale, opz.rientro), fisse: fisse.length };
+  }
+
+  function ottimizzaLibero(D, opz) {
     var n = opz.tappe.length, gruppi = [0];
     opz.tappe.forEach(function (t) {
       gruppi.push(t.urgente ? 0 : (opz.consegnePrima ? (t.tipo === 'ritiro' ? 2 : 1) : 2));

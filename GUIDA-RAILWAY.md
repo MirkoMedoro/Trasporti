@@ -134,7 +134,14 @@ Si può anche caricare una foto già presente sul computer. La lettura gratuita
 legge fogli stampati: tabelle con Colli / Lunghezza / Larghezza / Altezza /
 Peso anche in inglese, tedesco, francese e spagnolo (NrPacking, Qty, Length,
 Width, Height, Weight…), oppure righe come "3 bancali 120x80x150 450 kg".
-Le righe lette con poca sicurezza sono evidenziate in giallo da controllare. Con la chiave
+Le righe lette con poca sicurezza sono evidenziate in giallo da controllare.
+Regole di lettura: senza numero di colli ogni riga vale 1 collo; il peso è solo
+il lordo (il netto e il volume si ignorano, il volume lo calcola il programma);
+se il peso è della riga intera (es. Qty 2, Gross Weight 40) viene diviso per
+collo; prezzi e costi non vengono mai presi per pesi; nelle email valgono solo
+le righe dell'elenco, non le misure scritte dentro le frasi; se sul foglio c'è
+la riga "Total", il programma controlla che colli e peso tornino. La non
+sovrapponibilità la decide l'operatore con la spunta nel Calcolatore. Con la chiave
 `ANTHROPIC_API_KEY` si attiva la lettura intelligente, che legge anche i fogli
 scritti a mano. Le foto non vengono salvate: restano in memoria solo il tempo
 di passarle al computer.

@@ -1667,16 +1667,18 @@
         box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         var avanza = function (testo) { var el = box.querySelector('#tf-avanz'); if (el) el.textContent = testo; };
         var lettura = usaAi
-          ? api('POST', '/api/foto/leggi', { tipo: tipo, dati: dati }).then(function (r) { return r.righe; })
-          : immagineDaUrl(url).then(function (img) { return leggiScansione(paginaFoto(img), avanza, { perLinea: true }); })
-            .then(function (righe) { return window.Misure.estraiMisure(righe).righe; });
-        lettura.then(function (righe) { fotoLettura = false; mostraMisureLette(url, righe, usaAi); })
+          ? api('POST', '/api/foto/leggi', { tipo: tipo, dati: dati }).then(function (r) { return { righe: r.righe }; })
+          : immagineDaUrl(url).then(function (img) {
+              // due letture: soglia unica (tabelle pulite) e soglia zona per zona (fondi grigi, luce storta)
+              return leggiScansione(paginaFoto(img), avanza, { perLinea: true, cosa: 'foto', varianti: [{}, { adattiva: true }] });
+            }).then(function (letture) { return window.Misure.migliore(letture); });
+        lettura.then(function (ris) { fotoLettura = false; mostraMisureLette(url, ris.righe, usaAi, ris.totali); })
           .catch(function (e) {
             fotoLettura = false;
             box.innerHTML = '<p class="errore">Non sono riuscito a leggere la foto: ' + esc(e.message) + '</p>';
           });
       }
-      function mostraMisureLette(url, righe, daAi) {
+      function mostraMisureLette(url, righe, daAi, totali) {
         var box = fotoBox.querySelector('#tf-risultato');
         if (!righe.length) {
           box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div><h3>Non ho trovato misure</h3>' +
@@ -1687,6 +1689,9 @@
         var colli = righe.reduce(function (a, r) { return a + (Number(r.n) || 0); }, 0);
         box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div>' +
           '<h3>Trovate ' + righe.length + (righe.length === 1 ? ' riga' : ' righe') + ', ' + colli + ' colli</h3>' +
+          (totali ? '<p class="controllo-totali">Confronto con la riga Totale del foglio: ' +
+            (totali.colliOk == null ? '' : (totali.colliOk ? '<span class="ok">✓ colli ' + num(totali.colliLetti) + ' su ' + num(totali.colliFoglio) + '</span>' : '<span class="no">⚠ colli letti ' + num(totali.colliLetti) + ', sul foglio ' + num(totali.colliFoglio) + '</span>')) +
+            (totali.pesoOk == null ? '' : ' · ' + (totali.pesoOk ? '<span class="ok">✓ peso ' + num(totali.pesoLetto, 1) + ' kg</span>' : '<span class="no">⚠ peso letto ' + num(totali.pesoLetto, 1) + ' kg, sul foglio ' + num(totali.pesoFoglio, 1) + ' kg</span>')) + '</p>' : '') +
           (daAi ? '' : '<p class="avviso-ocr">⚠ Controlla i numeri confrontandoli con la foto prima di usarli.' +
             (righe.filter(function (r) { return r.incompleta; }).length ? ' Le righe evidenziate sono state lette con difficoltà: guardale bene.' : '') + '</p>') +
           '<div class="tabella-scroll"><table class="tab-colli"><thead><tr><th>Descrizione</th><th class="num">Colli</th><th class="num">Lungh.</th><th class="num">Largh.</th><th class="num">Alt.</th><th class="num">Peso collo</th><th>Non sovrapp.</th></tr></thead><tbody>' +
@@ -1837,14 +1842,19 @@
     });
   }
   // pagine: [{ disegna(canvas) -> Promise, larghezzaPt }]; avanzamento(testo)
+  // opzioni.varianti: più modi di preparare l'immagine (es. [{}, { adattiva: true }]); ogni variante viene
+  // letta e si restituisce un elenco di letture, una per variante. Senza varianti: una sola lettura.
   function leggiScansione(pagine, avanzamento, opzioni) {
-    var worker = null, tutte = [];
+    opzioni = opzioni || {};
+    var varianti = opzioni.varianti || [{}], worker = null, letture = varianti.map(function () { return []; }), passo = 0;
     return caricaOcr().then(function (T) {
       avanzamento('Preparo il lettore (la prima volta scarica circa 5 MB)…');
       return T.createWorker('ita', 1, {
         workerPath: '/lib/ocr/worker.min.js', corePath: '/lib/ocr/', langPath: '/lib/ocr',
         logger: function (m) {
-          if (m.status === 'recognizing text') avanzamento('Leggo la scansione' + (pagine.length > 1 ? ', pagina ' + (paginaCorrente + 1) + ' di ' + pagine.length : '') + '… ' + Math.round(m.progress * 100) + '%');
+          if (m.status === 'recognizing text') avanzamento('Leggo la ' + (opzioni.cosa || 'scansione') +
+            (pagine.length > 1 ? ', pagina ' + (paginaCorrente + 1) + ' di ' + pagine.length : '') +
+            (varianti.length > 1 ? ' (lettura ' + (passo + 1) + ' di ' + varianti.length + ')' : '') + '… ' + Math.round(m.progress * 100) + '%');
         }
       });
     }).then(function (w) {
@@ -1854,28 +1864,35 @@
       return pagine.reduce(function (catena, pg, n) {
         return catena.then(function () {
           paginaCorrente = n;
-          var canvas = document.createElement('canvas');
+          var canvas = document.createElement('canvas'), grigio, w, h;
           return pg.disegna(canvas).then(function () {
-            var ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
-            var dati = ctx.getImageData(0, 0, w, h), px = dati.data, grigio = new Uint8Array(w * h);
+            var ctx = canvas.getContext('2d'); w = canvas.width; h = canvas.height;
+            var px = ctx.getImageData(0, 0, w, h).data;
+            grigio = new Uint8Array(w * h);
             for (var i = 0; i < w * h; i++) grigio[i] = (px[i * 4] * 3 + px[i * 4 + 1] * 6 + px[i * 4 + 2]) / 10;
-            var pulita = window.Giro.pulisciImmagine(grigio, w, h);
-            for (var j = 0; j < w * h; j++) { px[j * 4] = px[j * 4 + 1] = px[j * 4 + 2] = pulita[j]; px[j * 4 + 3] = 255; }
-            ctx.putImageData(dati, 0, 0);
-            return worker.recognize(canvas, { rotateAuto: true }, { blocks: true });
-          }).then(function (r) {
-            var parole = [];
-            (r.data.blocks || []).forEach(function (b, bi) { (b.paragraphs || []).forEach(function (p, pi) { (p.lines || []).forEach(function (l, li) { (l.words || []).forEach(function (x) {
-              parole.push({ testo: x.text, conf: x.confidence, x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1, linea: bi + '.' + pi + '.' + li });
-            }); }); }); });
-            tutte = tutte.concat(window.Giro.righeDaOcr(parole, canvas.width / pg.larghezzaPt, n + 1, opzioni));
+            return varianti.reduce(function (c2, variante, iv) {
+              return c2.then(function () {
+                passo = iv;
+                var ctx = canvas.getContext('2d'), dati = ctx.createImageData(w, h), d = dati.data;
+                var pulita = window.Giro.pulisciImmagine(grigio, w, h, variante);
+                for (var j = 0; j < w * h; j++) { d[j * 4] = d[j * 4 + 1] = d[j * 4 + 2] = pulita[j]; d[j * 4 + 3] = 255; }
+                ctx.putImageData(dati, 0, 0);
+                return worker.recognize(canvas, { rotateAuto: true }, { blocks: true }).then(function (r) {
+                  var parole = [];
+                  (r.data.blocks || []).forEach(function (b, bi) { (b.paragraphs || []).forEach(function (p, pi) { (p.lines || []).forEach(function (l, li) { (l.words || []).forEach(function (x) {
+                    parole.push({ testo: x.text, conf: x.confidence, x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1, linea: bi + '.' + pi + '.' + li });
+                  }); }); }); });
+                  letture[iv] = letture[iv].concat(window.Giro.righeDaOcr(parole, w / pg.larghezzaPt, n + 1, opzioni));
+                });
+              });
+            }, Promise.resolve());
           });
         });
       }, Promise.resolve());
     }).then(function () {
       worker.terminate();
-      window._ultimaLetturaOcr = tutte; // utile per capire cosa è stato letto
-      return tutte;
+      window._ultimaLetturaOcr = letture; // utile per capire cosa è stato letto
+      return opzioni.varianti ? letture : letture[0];
     }, function (e) { if (worker) worker.terminate(); throw e; });
   }
   var paginaCorrente = 0;

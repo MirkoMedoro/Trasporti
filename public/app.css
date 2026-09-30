@@ -479,3 +479,6 @@ tr.riga-deposito td { background: var(--fondo); }
 }
 tr.da-controllare td { background: #fff4d1; }
 tr.da-controllare td:first-child { box-shadow: inset 4px 0 0 var(--giallo-scuro); }
+.controllo-totali { margin: 6px 0; font-weight: 600; }
+.controllo-totali .ok { color: var(--verde); }
+.controllo-totali .no { color: var(--rosso); }

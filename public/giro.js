@@ -96,7 +96,13 @@
       celle = celle.map(function (c) { return { x: c.x, fine: c.fine, parole: c.parole, testo: c.testo.replace(/[|]/g, ' ').replace(/\s+/g, ' ').trim() }; })
         .filter(function (c) { return c.testo && !/^[\-_=.,:;'"`~]+$/.test(c.testo); });
       // sicurezza più bassa tra le parole con cifre: serve a segnalare i numeri letti male
-      var confNumeri = r.parole.filter(function (w) { return /\d/.test(w.testo) && w.conf != null; }).map(function (w) { return w.conf; });
+      // un peso di una sola cifra ("8 kg" letto "3 kg") è il caso più fragile: chiede 10 punti di sicurezza in più
+      var confNumeri = [];
+      r.parole.forEach(function (w, iw) {
+        if (!/\d/.test(w.testo) || w.conf == null) return;
+        var succ = r.parole[iw + 1], pesoCorto = (w.testo.match(/\d/g) || []).length === 1 && (/kg/i.test(w.testo) || (succ && /^kgs?/i.test(succ.testo)));
+        confNumeri.push(pesoCorto ? w.conf - 10 : w.conf);
+      });
       return { y: -r.yc, celle: celle, testo: celle.map(function (c) { return c.testo; }).join(' | '), pagina: pagina || 1,
         confMin: confNumeri.length ? Math.min.apply(null, confNumeri) : null };
     }).filter(function (r) { return r.celle.length; });
@@ -104,8 +110,10 @@
 
   // Prepara l'immagine di una scansione per la lettura: bianco e nero netto, via le righe della
   // tabella (confondono il riconoscimento) e i puntini di sporco. gray: un byte per pixel (0 = nero).
-  function pulisciImmagine(gray, w, h) {
+  function pulisciImmagine(gray, w, h, opzioni) {
     var n = w * h, i, x, y;
+    opzioni = opzioni || {};
+    if (opzioni.adattiva) return senzaLinee(sogliaAdattiva(gray, w, h), w, h);
     // soglia automatica (metodo di Otsu)
     var ist = new Array(256).fill(0);
     for (i = 0; i < n; i++) ist[gray[i]]++;
@@ -120,6 +128,32 @@
     }
     var nero = new Uint8Array(n);
     for (i = 0; i < n; i++) nero[i] = gray[i] <= soglia ? 1 : 0;
+    return senzaLinee(nero, w, h);
+  }
+
+  // Soglia calcolata zona per zona (metodo di Bradley): regge ombre, luce storta e fondi grigi
+  // (per esempio la riga di intestazione colorata di una tabella). 1 = nero.
+  function sogliaAdattiva(gray, w, h) {
+    var integ = new Float64Array((w + 1) * (h + 1)), x, y;
+    for (y = 1; y <= h; y++) {
+      var riga = 0;
+      for (x = 1; x <= w; x++) { riga += gray[(y - 1) * w + x - 1]; integ[y * (w + 1) + x] = integ[(y - 1) * (w + 1) + x] + riga; }
+    }
+    var s = Math.max(15, Math.round(Math.max(w, h) / 40)), r = s >> 1, t = 0.15, nero = new Uint8Array(w * h);
+    for (y = 0; y < h; y++) {
+      var y1 = Math.max(0, y - r), y2 = Math.min(h - 1, y + r);
+      for (x = 0; x < w; x++) {
+        var x1 = Math.max(0, x - r), x2 = Math.min(w - 1, x + r);
+        var area = (x2 - x1 + 1) * (y2 - y1 + 1);
+        var somma = integ[(y2 + 1) * (w + 1) + x2 + 1] - integ[y1 * (w + 1) + x2 + 1] - integ[(y2 + 1) * (w + 1) + x1] + integ[y1 * (w + 1) + x1];
+        nero[y * w + x] = gray[y * w + x] * area <= somma * (1 - t) ? 1 : 0;
+      }
+    }
+    return nero;
+  }
+
+  function senzaLinee(nero, w, h) {
+    var n = w * h, i, x, y;
     // righe e colonne della tabella: tratti neri molto più lunghi di una lettera
     var togli = new Uint8Array(n), minO = Math.max(40, Math.round(w * 0.035)), minV = Math.max(40, Math.round(h * 0.03));
     for (y = 0; y < h; y++) {

@@ -1667,11 +1667,15 @@
         box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         var avanza = function (testo) { var el = box.querySelector('#tf-avanz'); if (el) el.textContent = testo; };
         var lettura = usaAi
-          ? api('POST', '/api/foto/leggi', { tipo: tipo, dati: dati }).then(function (r) { return { righe: r.righe }; })
+          ? api('POST', '/api/foto/leggi', { tipo: tipo, dati: dati }).then(function (r) { return { righe: r.righe, totali: r.totali }; })
           : immagineDaUrl(url).then(function (img) {
-              // due letture: soglia unica (tabelle pulite) e soglia zona per zona (fondi grigi, luce storta)
-              return leggiScansione(paginaFoto(img), avanza, { perLinea: true, cosa: 'foto', varianti: [{}, { adattiva: true }] });
-            }).then(function (letture) { return window.Misure.migliore(letture); });
+              // lettore moderno (PaddleOCR, gratuito, gira sul computer); se il browser non ce la fa, il vecchio lettore
+              return leggiConPaddle(img, avanza).catch(function (e) {
+                console.warn('Lettore moderno non disponibile, uso quello di riserva:', e);
+                return leggiScansione(paginaFoto(img), avanza, { perLinea: true, cosa: 'foto', varianti: [{}, { adattiva: true }] })
+                  .then(function (letture) { return window.Misure.migliore(letture); });
+              });
+            });
         lettura.then(function (ris) { fotoLettura = false; mostraMisureLette(url, ris.righe, usaAi, ris.totali); })
           .catch(function (e) {
             fotoLettura = false;
@@ -1692,11 +1696,11 @@
           (totali ? '<p class="controllo-totali">Confronto con la riga Totale del foglio: ' +
             (totali.colliOk == null ? '' : (totali.colliOk ? '<span class="ok">✓ colli ' + num(totali.colliLetti) + ' su ' + num(totali.colliFoglio) + '</span>' : '<span class="no">⚠ colli letti ' + num(totali.colliLetti) + ', sul foglio ' + num(totali.colliFoglio) + '</span>')) +
             (totali.pesoOk == null ? '' : ' · ' + (totali.pesoOk ? '<span class="ok">✓ peso ' + num(totali.pesoLetto, 1) + ' kg</span>' : '<span class="no">⚠ peso letto ' + num(totali.pesoLetto, 1) + ' kg, sul foglio ' + num(totali.pesoFoglio, 1) + ' kg</span>')) + '</p>' : '') +
-          (daAi ? '' : '<p class="avviso-ocr">⚠ Controlla i numeri confrontandoli con la foto prima di usarli.' +
+          (daAi ? (righe.some(function (r) { return r.incompleta; }) ? '<p class="avviso-ocr">⚠ Le righe evidenziate hanno numeri poco leggibili: controllale sulla foto.</p>' : '') : '<p class="avviso-ocr">⚠ Controlla i numeri confrontandoli con la foto prima di usarli.' +
             (righe.filter(function (r) { return r.incompleta; }).length ? ' Le righe evidenziate sono state lette con difficoltà: guardale bene.' : '') + '</p>') +
           '<div class="tabella-scroll"><table class="tab-colli"><thead><tr><th>Descrizione</th><th class="num">Colli</th><th class="num">Lungh.</th><th class="num">Largh.</th><th class="num">Alt.</th><th class="num">Peso collo</th><th>Non sovrapp.</th></tr></thead><tbody>' +
           righe.map(function (r) {
-            return '<tr' + (r.incompleta && !daAi ? ' class="da-controllare"' : '') + '><td>' + (r.incompleta && !daAi ? '⚠ ' : '') + esc(r.nome || '–') + '</td><td class="num">' + esc(r.n) + '</td><td class="num">' + esc(r.l) + '</td><td class="num">' + esc(r.p) + '</td><td class="num">' + esc(r.h) + '</td>' +
+            return '<tr' + (r.incompleta ? ' class="da-controllare"' : '') + '><td>' + (r.incompleta ? '⚠ ' : '') + esc(r.nome || '–') + '</td><td class="num">' + esc(r.n) + '</td><td class="num">' + esc(r.l) + '</td><td class="num">' + esc(r.p) + '</td><td class="num">' + esc(r.h) + '</td>' +
               '<td class="num">' + (r.peso !== '' ? esc(r.peso) + ' kg' : '–') + '</td><td>' + (r.impilabile === false ? 'Sì' : '') + '</td></tr>';
           }).join('') + '</tbody></table></div>' +
           '<div class="riga-azioni"><button class="btn btn-primario" id="tf-sostituisci">Usa queste righe</button><button class="btn" id="tf-aggiungi">Aggiungi alle righe già inserite</button><button class="btn-testo" id="tf-scarta">Scarta</button></div>' +
@@ -1705,7 +1709,7 @@
           var nuove = righe.map(function (r) {
             var n = Number(r.n) || 1, peso = r.peso === '' ? '' : Number(r.peso);
             if (peso !== '' && t.modoPeso === 'totale') peso = Math.round(peso * n * 10) / 10;
-            return { nome: r.nome || 'Collo', n: n, l: r.l, p: r.p, h: r.h, peso: peso, impilabile: r.impilabile !== false, controlla: !!r.incompleta && !daAi };
+            return { nome: r.nome || 'Collo', n: n, l: r.l, p: r.p, h: r.h, peso: peso, impilabile: r.impilabile !== false, controlla: !!r.incompleta };
           });
           var vuote = t.righe.every(function (r) { return r.h === '' && r.peso === ''; });
           t.righe = sostituisci || vuote ? nuove : t.righe.concat(nuove);
@@ -1842,6 +1846,86 @@
     });
   }
   // pagine: [{ disegna(canvas) -> Promise, larghezzaPt }]; avanzamento(testo)
+  // ---------- Lettore moderno: PaddleOCR (modelli PP-OCRv4) nel browser, gratuito, nessun dato esce dal computer ----------
+  var paddlePronto = null;
+  function caricaScript(src) {
+    return new Promise(function (ok, ko) {
+      var s = document.createElement('script'); s.src = src;
+      s.onload = ok; s.onerror = function () { ko(new Error('Impossibile caricare ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+  // I file grandi del lettore (motore e modelli, circa 30 MB) si scaricano gratis da jsDelivr, il servizio pubblico
+  // che distribuisce i pacchetti npm: così su GitHub non serve caricarli. Se in futuro Stiva gira su un server proprio,
+  // basta mettere i file in /lib/paddle/ (anche divisi in pezzi .parte0.bin, .parte1.bin…) e vengono usati quelli.
+  var CDN_PADDLE = {
+    det: 'https://cdn.jsdelivr.net/npm/@gutenye/ocr-models@1.4.2/assets/ch_PP-OCRv4_det_infer.onnx',
+    rec: 'https://cdn.jsdelivr.net/npm/@gutenye/ocr-models@1.4.2/assets/ch_PP-OCRv4_rec_infer.onnx',
+    'ort-wasm-simd-threaded': 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.wasm',
+  };
+  var PEZZI_PADDLE = { det: 2, rec: 4, 'ort-wasm-simd-threaded': 5 };
+  function scaricaBinario(url) {
+    return fetch(url).then(function (r) {
+      // un file mancante sul nostro server torna come pagina html: non è il file giusto
+      if (!r.ok || /text\/html/.test(r.headers.get('content-type') || '')) throw new Error(url);
+      return r.arrayBuffer();
+    });
+  }
+  function scaricaAPezzi(nome) {
+    var richieste = [];
+    for (var i = 0; i < PEZZI_PADDLE[nome]; i++) richieste.push(scaricaBinario('/lib/paddle/' + nome + '.parte' + i + '.bin'));
+    return Promise.all(richieste).then(function (parti) {
+      var tot = parti.reduce(function (a, p) { return a + p.byteLength; }, 0), out = new Uint8Array(tot), pos = 0;
+      parti.forEach(function (p) { out.set(new Uint8Array(p), pos); pos += p.byteLength; });
+      return out;
+    }).catch(function () {
+      return scaricaBinario(CDN_PADDLE[nome]).then(function (b) { return new Uint8Array(b); }).catch(function () {
+        throw new Error('Non riesco a scaricare il lettore: controlla la connessione a internet.');
+      });
+    });
+  }
+  function preparaPaddle(avanzamento) {
+    if (!paddlePronto) {
+      var dizionario;
+      paddlePronto = (window.ort ? Promise.resolve() : caricaScript('/lib/paddle/ort.wasm.min.js'))
+        .then(function () { return window.LettorePaddle ? null : caricaScript('/lib/paddle/lettore-paddle.js?v=1'); })
+        .then(function () {
+          if (typeof WebAssembly === 'undefined') throw new Error('Il browser non supporta WebAssembly.');
+          avanzamento('Preparo il lettore (la prima volta scarica circa 30 MB, poi resta nel browser)…');
+          return Promise.all([fetch('/lib/paddle/dict.txt').then(function (r) { return r.text(); }), scaricaAPezzi('ort-wasm-simd-threaded')]);
+        })
+        .then(function (res) {
+          dizionario = res[0];
+          window.ort.env.wasm.wasmPaths = '/lib/paddle/';
+          window.ort.env.wasm.wasmBinary = res[1];
+          window.ort.env.wasm.numThreads = window.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
+          return Promise.all([scaricaAPezzi('det'), scaricaAPezzi('rec')]);
+        })
+        .then(function (modelli) {
+          return window.LettorePaddle.crea({ ort: window.ort, det: modelli[0], rec: modelli[1], dizionario: dizionario });
+        });
+      paddlePronto.catch(function () { paddlePronto = null; });
+    }
+    return paddlePronto;
+  }
+  function leggiConPaddle(img, avanzamento) {
+    return preparaPaddle(avanzamento).then(function (lettore) {
+      var c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0);
+      var dati = ctx.getImageData(0, 0, c.width, c.height);
+      avanzamento('Leggo la foto…');
+      return lettore.leggi({ data: dati.data, width: c.width, height: c.height }, function (p) {
+        avanzamento('Leggo la foto… ' + Math.round(p * 100) + '%');
+      }).then(function (pezzi) {
+        var larghezzaPt = c.width >= c.height ? 842 : 595;
+        var righe = window.Giro.righeDaOcr(pezzi, c.width / larghezzaPt, 1);
+        window._ultimaLetturaOcr = righe;
+        return window.Misure.estraiMisure(righe);
+      });
+    });
+  }
+
   // opzioni.varianti: più modi di preparare l'immagine (es. [{}, { adattiva: true }]); ogni variante viene
   // letta e si restituisce un elenco di letture, una per variante. Senza varianti: una sola lettura.
   function leggiScansione(pagine, avanzamento, opzioni) {

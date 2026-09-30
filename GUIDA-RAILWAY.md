@@ -131,7 +131,10 @@ Nel Calcolatore il tasto **Leggi da foto** mostra un QR code:
    sovrapponibile): si controllano e si inseriscono con **Usa queste righe**.
 
 Si può anche caricare una foto già presente sul computer. La lettura gratuita
-legge fogli stampati: tabelle con Colli / Lunghezza / Larghezza / Altezza /
+usa un lettore moderno (PaddleOCR, cartella `public/lib/paddle`) che gira nel
+browser dell'operatore: nessun costo e nessuna foto mandata fuori. La prima
+volta il browser scarica circa 30 MB, poi li tiene in memoria. Legge fogli
+stampati: tabelle con Colli / Lunghezza / Larghezza / Altezza /
 Peso anche in inglese, tedesco, francese e spagnolo (NrPacking, Qty, Length,
 Width, Height, Weight…), oppure righe come "3 bancali 120x80x150 450 kg".
 Le righe lette con poca sicurezza sono evidenziate in giallo da controllare.
@@ -141,7 +144,13 @@ se il peso è della riga intera (es. Qty 2, Gross Weight 40) viene diviso per
 collo; prezzi e costi non vengono mai presi per pesi; nelle email valgono solo
 le righe dell'elenco, non le misure scritte dentro le frasi; se sul foglio c'è
 la riga "Total", il programma controlla che colli e peso tornino. La non
-sovrapponibilità la decide l'operatore con la spunta nel Calcolatore. Con la chiave
+sovrapponibilità la decide l'operatore con la spunta nel Calcolatore.
+
+Per packing list lunghe, con caratteri piccoli o scritte a mano conviene la
+lettura intelligente (chiave `ANTHROPIC_API_KEY`): segue le stesse regole e
+costa indicativamente 2–3 centesimi di dollaro a foto con il modello
+predefinito (Claude Sonnet 5). Controlla il listino aggiornato su
+https://platform.claude.com e imposta un limite di spesa mensile nella Console. Con la chiave
 `ANTHROPIC_API_KEY` si attiva la lettura intelligente, che legge anche i fogli
 scritti a mano. Le foto non vengono salvate: restano in memoria solo il tempo
 di passarle al computer.

@@ -1,0 +1,12 @@
+Lettore di testo usato dal Calcolatore (foto delle packing list).
+
+- lettore-paddle.js  : codice di Stiva che usa i modelli (preparazione della foto, righe di testo, caratteri).
+- modelli (scaricati da jsDelivr, pacchetto npm @gutenye/ocr-models) : modelli PaddleOCR PP-OCRv4 (rilevamento e riconoscimento del testo),
+                       PaddlePaddle Authors, licenza Apache 2.0 - https://github.com/PaddlePaddle/PaddleOCR
+                       (versione ONNX distribuita con RapidOCR, licenza Apache 2.0).
+- dict.txt           : elenco dei caratteri del modello di riconoscimento.
+- ort.wasm.min.js, ort-wasm-simd-threaded.* : ONNX Runtime Web, Microsoft, licenza MIT -
+                       https://github.com/microsoft/onnxruntime
+
+Tutto gira nel browser dell'operatore: le foto non vengono mandate a servizi esterni.
+- Il motore (ort-wasm-simd-threaded.wasm) e i modelli det/rec si scaricano da cdn.jsdelivr.net. Su un server proprio si possono mettere qui come pezzi .parte0.bin, .parte1.bin… e vengono usati questi.

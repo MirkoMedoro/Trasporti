@@ -183,7 +183,8 @@
     if (!d) return null;
     var prima = t.slice(0, d.inizio), dopo = t.slice(d.fine);
     // prezzi e costi non sono pesi: "— > costo € 85.00 a plt", "+ iva", "Fuel 5 %"
-    dopo = dopo.replace(/(costo|prezzo|tariffa|importo|diritti|fuel|iva|€|eur\b|euro)[\s\S]*$/i, '');
+    // (anche letti male: "c0sto", "E85.00", "∈140.00", e la freccia "—>" che di solito introduce il prezzo)
+    dopo = dopo.replace(/(c[o0]st[o0]|prezz[o0]|tariff|imp[o0]rt[o0]|diritti|fuel|\biva\b|€|∈|\beur\b|eur[o0]|\bE\s?\d|[—–-]\s*>|=>)[\s\S]*$/i, '');
     if (n == null) {
       var q2 = prima.replace(/\d+[.)]\s*$|^\s*\d+[.)]\s+/, ' ').match(/(\d+)\s*(?:colli|collo|pz\.?|pezzi|plt|pallet|bancali|bancale|casse|cassa|cartoni|nr\.?|n\.?)?\s*[a-zà-ù.\s]*$/i);
       if (q2 && !/kg/i.test(prima.slice(q2.index))) n = Number(q2[1]);
@@ -303,19 +304,40 @@
         });
       });
     });
-    var coppie = [];
+    // parole vicine dello stesso tipo ("Gross" + "Weight") diventano un titolo solo
+    candidati.sort(function (a, b) { return a.sx - b.sx; });
+    var titoli = [];
     candidati.forEach(function (cd) {
-      colonne.forEach(function (col) {
-        var d = Math.min(Math.abs(cd.sx - col.sx), Math.abs(cd.dx - col.dx), Math.abs((cd.sx + cd.dx) / 2 - col.centro));
-        if (d <= soglia * 3) coppie.push({ cd: cd, col: col, d: d });
-      });
+      var u = titoli[titoli.length - 1];
+      if (u && u.k === cd.k && cd.sx - u.dx < soglia * 2) { u.dx = Math.max(u.dx, cd.dx); return; }
+      titoli.push({ k: cd.k, sx: cd.sx, dx: cd.dx });
     });
-    coppie.sort(function (a, b) { return a.d - b.d; });
-    var daTitolo = 0;
-    coppie.forEach(function (cp) {
-      if (cp.col.k || colonne.some(function (c) { return c.k === cp.cd.k; })) return;
-      cp.col.k = cp.cd.k; daTitolo++;
-    });
+    // Abbinamento titoli ↔ colonne rispettando l'ordine da sinistra a destra (Qty prima di Length, prima di
+    // Width…): anche con posizioni stimate, un titolo non può finire sulla colonna sbagliata.
+    var cols = colonne.slice().sort(function (a, b) { return a.centro - b.centro; });
+    var distanza = function (t, col) { return Math.min(Math.abs(t.sx - col.sx), Math.abs(t.dx - col.dx), Math.abs((t.sx + t.dx) / 2 - col.centro)); };
+    var nT = titoli.length, nC = cols.length, dp = [], da = [];
+    for (var a = 0; a <= nT; a++) { dp.push([]); da.push([]); for (var b2 = 0; b2 <= nC; b2++) { dp[a].push(null); da[a].push(null); } }
+    var meglio = function (x, y) { return !y || x.n > y.n || (x.n === y.n && x.d < y.d); };
+    dp[0][0] = { n: 0, d: 0 };
+    for (var a2 = 0; a2 <= nT; a2++) for (var b3 = 0; b3 <= nC; b3++) {
+      var cur = dp[a2][b3]; if (!cur) continue;
+      if (a2 < nT && meglio(cur, dp[a2 + 1][b3])) { dp[a2 + 1][b3] = { n: cur.n, d: cur.d }; da[a2 + 1][b3] = [a2, b3, false]; }
+      if (b3 < nC && meglio(cur, dp[a2][b3 + 1])) { dp[a2][b3 + 1] = { n: cur.n, d: cur.d }; da[a2][b3 + 1] = [a2, b3, false]; }
+      if (a2 < nT && b3 < nC) {
+        var dd = distanza(titoli[a2], cols[b3]);
+        if (dd <= soglia * 5) { var nuovo = { n: cur.n + 1, d: cur.d + dd }; if (meglio(nuovo, dp[a2 + 1][b3 + 1])) { dp[a2 + 1][b3 + 1] = nuovo; da[a2 + 1][b3 + 1] = [a2, b3, true]; } }
+      }
+    }
+    var daTitolo = 0, pa = nT, pb = nC;
+    while (pa > 0 || pb > 0) {
+      var passo = da[pa][pb]; if (!passo) break;
+      if (passo[2]) {
+        var tt = titoli[passo[0]], cc = cols[passo[1]];
+        if (!cc.k && !colonne.some(function (c) { return c.k === tt.k; })) { cc.k = tt.k; daTitolo++; }
+      }
+      pa = passo[0]; pb = passo[1];
+    }
     // riconoscimento dai valori, per le intestazioni illeggibili
     function stat(col) {
       var v = col.numeri.map(function (x) { return x.v; });

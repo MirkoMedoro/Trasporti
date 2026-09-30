@@ -83,16 +83,24 @@ pc.delete('/sessione/:codice', (req, res) => {
 const CHIAVE = () => process.env.ANTHROPIC_API_KEY;
 const MODELLO = () => process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 
-const ISTRUZIONI = `Questa foto mostra un foglio, un documento o una tabella con le misure dei colli di una spedizione (azienda di trasporti italiana). Può essere scritto a mano.
-Estrai TUTTE le righe di colli. Rispondi SOLO con un oggetto JSON valido, senza altro testo:
-{"righe": [{"descrizione": "tipo di collo se indicato (bancale, cassa, cartone...), altrimenti stringa vuota",
-            "colli": numero di colli uguali in questa riga (1 se non indicato),
-            "lunghezza_cm": numero, "larghezza_cm": numero, "altezza_cm": numero,
-            "peso_collo_kg": peso di UN collo se indicato, altrimenti null,
-            "peso_totale_riga_kg": peso di tutti i colli della riga se indicato così, altrimenti null,
-            "non_sovrapponibile": true se è scritto non sovrapponibile / non impilabile / NS, altrimenti false}]}
-Regole: misure sempre in centimetri (converti da metri o millimetri). Non inventare numeri: se una misura non si legge metti null.
-Se c'è solo un peso totale della spedizione e più righe, mettilo in peso_totale_riga_kg della prima riga e scrivi "peso totale spedizione" nella descrizione.`;
+const ISTRUZIONI = `Questa foto mostra un foglio, un'email, una packing list o una tabella con le misure dei colli di una spedizione (azienda di trasporti italiana). Può essere in italiano o in un'altra lingua, stampata o scritta a mano.
+Estrai le righe dei colli seguendo queste regole:
+- COLLI: numero di colli della riga (colonne tipo Qty, Quantity, Pcs, Colli, NrPacking). Se il numero non c'è o la cella è vuota, vale 1.
+  ATTENZIONE: colonne come "Packages", "Item", "Package no." che contengono codici (es. 2973, 2969/2970) NON sono il numero di colli.
+- MISURE: lunghezza, larghezza, altezza in centimetri (converti da metri o millimetri). Le misure di una riga sono quelle di UN collo.
+- PESO: solo il peso LORDO (Gross weight, Peso lordo, Peso). Ignora il peso netto (Net weight). Se il peso non c'è, lascia null.
+  Indica se il peso scritto è di un singolo collo o di tutta la riga: nelle packing list con una riga "Total", se la somma dei pesi delle righe dà il totale, il peso è della riga intera.
+- IGNORA: volumi/metri cubi (Cube, CBM, Volume), codici articolo, descrizioni dei prodotti, prezzi, costi, tariffe, diritti, fuel, IVA, firme, indirizzi, numeri scritti a mano sul margine.
+- La riga "Total"/"Totale" NON è un collo: riporta i suoi valori solo in "totali".
+- Nelle email o nei testi: prendi solo le righe dell'elenco (puntato o a righe) con le misure; ignora le misure citate dentro le frasi del testo se sono ripetute nell'elenco.
+- NON SOVRAPPONIBILE: true solo se è scritto sulla riga di quel collo (non sovrapponibile, non impilabile, NS, non stackable). Una frase generale nel testo non conta: lo decide l'operatore.
+- Non inventare numeri: se una cifra non si legge bene metti "incerto": true su quella riga (e null dove non si legge proprio).
+Rispondi SOLO con un oggetto JSON valido, senza altro testo:
+{"righe": [{"tipo_collo": "bancale, cassa, cartone… solo se indicato, altrimenti stringa vuota",
+            "colli": numero, "lunghezza_cm": numero o null, "larghezza_cm": numero o null, "altezza_cm": numero o null,
+            "peso_lordo_kg": numero o null, "peso_della_riga_intera": true se il peso è di tutti i colli della riga, false se di un collo,
+            "non_sovrapponibile": true/false, "incerto": true/false}],
+ "totali": {"colli": numero scritto nella riga Totale o null, "peso_lordo_kg": numero scritto nella riga Totale o null}}`;
 
 pc.get('/stato', (req, res) => res.json({ ai: !!CHIAVE() }));
 
@@ -123,17 +131,30 @@ pc.post('/leggi', async (req, res) => {
     const testo = (corpo.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
     const json = JSON.parse(testo.slice(testo.indexOf('{'), testo.lastIndexOf('}') + 1));
     const numero = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? '' : Number(v));
-    const righe = (Array.isArray(json.righe) ? json.righe : []).slice(0, 100).map((x) => {
-      const n = numero(x.colli) || 1;
-      let peso = numero(x.peso_collo_kg);
-      if (peso === '' && numero(x.peso_totale_riga_kg) !== '') peso = Math.round(numero(x.peso_totale_riga_kg) / n * 10) / 10;
+    const righe = (Array.isArray(json.righe) ? json.righe : []).slice(0, 200).map((x) => {
+      const n = numero(x.colli) > 0 ? numero(x.colli) : 1;
+      let peso = numero(x.peso_lordo_kg);
+      if (peso !== '' && x.peso_della_riga_intera && n > 1) peso = Math.round(peso / n * 10) / 10;   // peso per collo
+      const l = numero(x.lunghezza_cm), p = numero(x.larghezza_cm), h = numero(x.altezza_cm);
       return {
-        nome: String(x.descrizione || '').slice(0, 60), n,
-        l: numero(x.lunghezza_cm), p: numero(x.larghezza_cm), h: numero(x.altezza_cm),
-        peso, impilabile: !x.non_sovrapponibile,
+        nome: String(x.tipo_collo || '').slice(0, 60), n, l, p, h, peso,
+        impilabile: !x.non_sovrapponibile,
+        incompleta: !!x.incerto || l === '' || p === '' || h === '',
       };
-    }).filter((x) => x.l !== '' || x.p !== '' || x.h !== '' || x.peso !== '');
-    res.json({ righe });
+    }).filter((x) => x.l !== '' || x.p !== '' || x.h !== '');
+    // confronto con la riga Totale scritta sul foglio
+    let totali = null;
+    const t = json.totali || {};
+    const totColli = numero(t.colli), totPeso = numero(t.peso_lordo_kg);
+    if (totColli !== '' || totPeso !== '') {
+      const colli = righe.reduce((a, x) => a + x.n, 0);
+      const peso = Math.round(righe.reduce((a, x) => a + (x.peso === '' ? 0 : x.peso * x.n), 0) * 10) / 10;
+      totali = {
+        colliFoglio: totColli === '' ? null : totColli, colliLetti: colli, colliOk: totColli === '' ? null : totColli === colli,
+        pesoFoglio: totPeso === '' ? null : totPeso, pesoLetto: peso, pesoOk: totPeso === '' ? null : Math.abs(peso - totPeso) <= Math.max(1, totPeso * 0.01),
+      };
+    }
+    res.json({ righe, totali });
   } catch (e) {
     console.error('Lettura misure AI:', e.message);
     res.status(502).json({ errore: 'Non sono riuscito a leggere la foto. Riprova o usa la lettura gratuita.' });

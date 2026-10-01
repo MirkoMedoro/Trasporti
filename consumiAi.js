@@ -19,7 +19,7 @@ const PREZZI = [
   [/^claude-sonnet/, 2, 10], [/^claude-opus/, 4, 20], [/^claude-haiku/, 1, 5], [/^claude-fable/, 10, 50],
   [/^gemini-[\d.]+-flash-lite/, 0.3, 2.5], [/^gemini-[\d.]+-flash/, 0.75, 3.75], [/^gemini-[\d.]+-pro/, 2.5, 15],
   [/^mistral-large/, 0.5, 1.5], [/^mistral-medium/, 1.5, 7.5], [/^mistral-small/, 0.15, 0.6],
-  [/^qwen3-vl-plus/, 0.2, 1.6],
+  [/^qwen3-vl-plus/, 0.2, 1.6], [/^qwen3\.6-plus/, 0.5, 3], [/^qwen3\.6-flash/, 0.19, 1.13],
 ];
 // Per un modello sconosciuto si usa un prezzo alto: meglio sovrastimare che sforare il tetto
 function stimaCosto(modello, tokIn, tokOut) {

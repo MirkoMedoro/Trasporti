@@ -85,7 +85,8 @@ pc.delete('/sessione/:codice', (req, res) => {
 //   ANTHROPIC_API_KEY  (Claude)       modello: ANTHROPIC_MODEL (predefinito claude-sonnet-5-5)
 //   GEMINI_API_KEY     (Google)       modello: GEMINI_MODEL    (predefinito gemini-3.8-flash)
 //   MISTRAL_API_KEY    (Mistral, UE)  modello: MISTRAL_MODEL   (predefinito mistral-large-latest)
-//   LETTURA_AI = anthropic | gemini | mistral  -> quale usare di solito (se manca: il primo con la chiave)
+//   QWEN_API_KEY       (Alibaba)      modello: QWEN_MODEL      (predefinito qwen3-vl-plus); indirizzo: QWEN_BASE_URL
+//   LETTURA_AI = anthropic | gemini | mistral | qwen  -> quale usare di solito (se manca: il primo con la chiave)
 const ISTRUZIONI = `Questa foto mostra un foglio, un'email, una packing list o una tabella con le misure dei colli di una spedizione (azienda di trasporti italiana). Può essere in italiano o in un'altra lingua, stampata o scritta a mano.
 Estrai le righe dei colli seguendo queste regole:
 - COLLI: numero di colli della riga (colonne tipo Qty, Quantity, Pcs, Colli, NrPacking). Se il numero non c'è o la cella è vuota, vale 1.
@@ -176,6 +177,31 @@ const FORNITORI = {
           messages: [{ role: 'user', content: [
             { type: 'text', text: ISTRUZIONI },
             { type: 'image_url', image_url: 'data:' + tipo + ';base64,' + dati },
+          ] }],
+        }),
+      }, this.nome);
+      const m = ((corpo.choices || [])[0] || {}).message || {};
+      const testo = Array.isArray(m.content) ? m.content.map((x) => x.text || '').join('') : String(m.content || '');
+      const u = corpo.usage || {};
+      return { testo, tokIn: u.prompt_tokens, tokOut: u.completion_tokens };
+    },
+  },
+  qwen: {
+    nome: 'Qwen (Alibaba)',
+    // chiave creata su Alibaba Cloud Model Studio (versione internazionale)
+    chiave: () => process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY,
+    modello: () => process.env.QWEN_MODEL || 'qwen3-vl-plus',
+    indirizzo: () => (process.env.QWEN_BASE_URL || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1').replace(/\/+$/, ''),
+    async leggi(tipo, dati, segnale) {
+      const modello = this.modello();
+      const corpo = await chiamaJson(this.indirizzo() + '/chat/completions', {
+        method: 'POST', signal: segnale,
+        headers: { authorization: 'Bearer ' + this.chiave(), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: modello, temperature: 0, max_tokens: 8000, enable_thinking: false,
+          messages: [{ role: 'user', content: [
+            { type: 'image_url', image_url: { url: 'data:' + tipo + ';base64,' + dati } },
+            { type: 'text', text: ISTRUZIONI },
           ] }],
         }),
       }, this.nome);

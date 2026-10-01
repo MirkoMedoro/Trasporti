@@ -2782,7 +2782,7 @@
   // La stessa foto letta da tutti i lettori disponibili, uno accanto all'altro, con tempo e costo.
   function vistaProvaLettura() {
     api('GET', '/api/foto/prova').then(function (info) {
-      var chiavi = { anthropic: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY', mistral: 'MISTRAL_API_KEY' };
+      var chiavi = { anthropic: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY', mistral: 'MISTRAL_API_KEY', qwen: 'QWEN_API_KEY' };
       var lettori = [{ id: 'gratuito', nome: 'Gratuito (sul computer)', modello: 'PaddleOCR', attivo: true }].concat(info.fornitori);
       var main = guscio('prova-lettura',
         '<div class="testata"><div><h1>Prova lettura</h1><p>Fai leggere la stessa foto a tutti i lettori e confronta i risultati. Le celle in giallo sono quelle su cui i lettori non sono d’accordo: guardale sulla foto per capire chi ha ragione.</p></div></div>' +

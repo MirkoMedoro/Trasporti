@@ -160,11 +160,13 @@ Su Railway, nelle **Variables**, metti la chiave di uno o più fornitori:
 | `GEMINI_API_KEY` | Google (piano a pagamento) | `gemini-3.8-flash` | ~0,7 centesimi di $ |
 | `MISTRAL_API_KEY` | Mistral (Francia) | `mistral-large-latest` | < 1 centesimo di $ |
 | `ANTHROPIC_API_KEY` | Anthropic | `claude-sonnet-5-5` | ~2,5 centesimi di $ |
+| `QWEN_API_KEY` | Alibaba Cloud Model Studio (internazionale) | `qwen3-vl-plus` | ~0,3 centesimi di $ |
 
-- `LETTURA_AI` = `gemini`, `mistral` o `anthropic`: quale usano i clienti nel
+- `LETTURA_AI` = `gemini`, `qwen`, `mistral` o `anthropic`: quale usano i clienti nel
   Calcolatore (se manca, il primo che ha la chiave). La lettura del borderò in
   Ottimizza giro usa Anthropic.
-- Il modello si può cambiare con `GEMINI_MODEL`, `MISTRAL_MODEL`, `ANTHROPIC_MODEL`.
+- Il modello si può cambiare con `GEMINI_MODEL`, `QWEN_MODEL`, `MISTRAL_MODEL`, `ANTHROPIC_MODEL`.
+- Qwen usa l'indirizzo internazionale (Singapore). Se la console di Alibaba ti indica un indirizzo diverso per il tuo spazio di lavoro, mettilo in `QWEN_BASE_URL` (quello che finisce con `/compatible-mode/v1`).
 - Con Google usa solo il **piano a pagamento** (con fatturazione attiva): la
   versione gratuita non è permessa per servizi offerti a utenti in Europa.
 

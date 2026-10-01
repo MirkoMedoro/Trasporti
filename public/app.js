@@ -22,6 +22,7 @@
     backup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6M4.5 11.5v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg>',
     tassato: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 8h10l2.5 12h-15z"/><path d="M9.5 8a2.5 2.5 0 0 1 5 0"/><path d="M9 14h6M12 11.5v5"/></svg>',
     strumenti: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.5 5.5a4 4 0 0 0 5 5L12 18a2.1 2.1 0 0 1-3-3z"/><path d="M14.5 5.5 17 3l1 3 3 1-2.5 2.5"/><path d="M4 20l3-3"/></svg>',
+    'prova-lettura': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M8 9h8M8 12h8M8 15h5"/></svg>',
     statistiche: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V4M4 20h16"/><path d="M8 16v-4M12 16V8M16 16v-6M20 16v-9"/></svg>',
     giri: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M17.8 7.6l-4.6 8.8M6.2 7.6l4.6 8.8"/></svg>',
     account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.2-7 8-7s7 2.5 8 7"/></svg>'
@@ -67,7 +68,7 @@
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (d) {
         if (r.status === 401 && stato.utente) { stato.utente = null; mostraAccesso(); }
-        if (!r.ok) throw new Error(d.errore || 'Operazione non riuscita.');
+        if (!r.ok) { var err = new Error(d.errore || 'Operazione non riuscita.'); err.stato = r.status; err.dati = d; throw err; }
         return d;
       });
     });
@@ -147,7 +148,7 @@
   // ---------- struttura con menu ----------
   function vociMenu() {
     var r = stato.utente.ruolo;
-    if (r === 'superadmin') return [['aziende', 'Aziende clienti'], ['statistiche', 'Statistiche'], ['backup', 'Backup'], ['account', 'Il mio account']];
+    if (r === 'superadmin') return [['aziende', 'Aziende clienti'], ['statistiche', 'Statistiche'], ['prova-lettura', 'Prova lettura'], ['backup', 'Backup'], ['account', 'Il mio account']];
     var v = [['home', 'Home']];
     var strumenti = [];
     if (haFunzione('carico')) strumenti.push(['carico', 'Piano di carico']);
@@ -1608,7 +1609,8 @@
           .catch(function (err) { avvisa(err.message); });
       };
       // --- misure da foto: dal telefono (QR code) o da un file sul computer ---
-      var fotoBox = main.querySelector('#t-foto-box'), fotoCodice = null, fotoTimer = null, fotoAi = false, fotoLettura = false;
+      var fotoBox = main.querySelector('#t-foto-box'), fotoCodice = null, fotoTimer = null, fotoAi = false, fotoLettura = false, fotoUltima = null,
+        fotoDisponibile = false, fotoAvviso = null, fotoCredito = null;
       function chiudiFoto() {
         clearInterval(fotoTimer); fotoTimer = null;
         if (fotoCodice) api('DELETE', '/api/foto/sessione/' + fotoCodice).catch(function () {});
@@ -1658,41 +1660,96 @@
           img.src = url;
         });
       }
-      function leggiFotoMisure(tipo, dati) {
+      // costo della lettura intelligente da mostrare sul tasto (es. "3 cent")
+      function prezzoAi() {
+        if (!fotoCredito || !fotoCredito.attivo) return '';
+        var c = fotoCredito.prezzo * 100;
+        return ' · ' + num(c, c % 1 ? 1 : 0) + ' cent';
+      }
+      function testoCredito() {
+        if (!fotoAi) return '';
+        if (!fotoDisponibile) return fotoAvviso || 'La lettura intelligente non è disponibile in questo momento.';
+        if (!fotoCredito || !fotoCredito.attivo) return '';
+        if (fotoCredito.esaurito) return 'Credito della lettura intelligente esaurito: chiedi una ricarica. La lettura gratuita funziona sempre.';
+        return 'Credito lettura intelligente: ' + num(fotoCredito.saldo, 2) + ' € (' + (fotoCredito.letture === 1 ? 'ancora 1 lettura' : 'circa ' + num(fotoCredito.letture) + ' letture') + ').';
+      }
+      function aiUsabile() { return fotoAi && fotoDisponibile && !(fotoCredito && fotoCredito.attivo && fotoCredito.esaurito); }
+      function aggiornaCredito() { var el = fotoBox.querySelector('#tf-credito'); if (el) el.textContent = testoCredito(); }
+      // Arriva una foto: se c'è la lettura intelligente l'operatore sceglie con due tasti, altrimenti si legge gratis
+      function leggiFotoMisure(tipo, dati, modo) {
         var box = fotoBox.querySelector('#tf-risultato'), url = 'data:' + tipo + ';base64,' + dati;
-        var usaAi = fotoAi && fotoBox.querySelector('#tf-ai') && fotoBox.querySelector('#tf-ai').checked;
+        fotoUltima = { tipo: tipo, dati: dati };
+        if (!modo && fotoAi) {
+          box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div><h3>Come vuoi leggere questa foto?</h3>' +
+            '<div class="scelta-lettura">' +
+              '<button class="btn" id="tf-gratis"><b>Lettura gratuita</b><small>fogli stampati e ordinati</small></button>' +
+              '<button class="btn btn-primario" id="tf-intel"' + (aiUsabile() ? '' : ' disabled') + '><b>Lettura intelligente' + prezzoAi() + '</b><small>packing list difficili, scritte a mano</small></button>' +
+            '</div><p class="nota">' + esc(testoCredito()) + '</p></div></div>';
+          box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          box.querySelector('#tf-gratis').onclick = function () { leggiFotoMisure(tipo, dati, 'gratis'); };
+          box.querySelector('#tf-intel').onclick = function () { leggiFotoMisure(tipo, dati, 'ai'); };
+          return;
+        }
+        var usaAi = modo === 'ai' && aiUsabile();
         fotoLettura = true;
         box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div><h3>Leggo le misure…</h3><p class="nota" id="tf-avanz">' +
           (usaAi ? 'Lettura intelligente in corso, qualche secondo…' : 'Preparo la lettura…') + '</p></div></div>';
         box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         var avanza = function (testo) { var el = box.querySelector('#tf-avanz'); if (el) el.textContent = testo; };
-        var lettura = usaAi
-          ? api('POST', '/api/foto/leggi', { tipo: tipo, dati: dati }).then(function (r) { return { righe: r.righe, totali: r.totali }; })
-          : immagineDaUrl(url).then(function (img) {
-              // lettore moderno (PaddleOCR, gratuito, gira sul computer); se il browser non ce la fa, il vecchio lettore
-              return leggiConPaddle(img, avanza).catch(function (e) {
-                console.warn('Lettore moderno non disponibile, uso quello di riserva:', e);
-                return leggiScansione(paginaFoto(img), avanza, { perLinea: true, cosa: 'foto', varianti: [{}, { adattiva: true }] })
-                  .then(function (letture) { return window.Misure.migliore(letture); });
-              });
+        function gratuita(nota) {
+          return immagineDaUrl(url).then(function (img) {
+            // lettore moderno (PaddleOCR, gratuito, gira sul computer); se il browser non ce la fa, il vecchio lettore
+            return leggiConPaddle(img, avanza).then(function (ris) { ris.lettore = 'Lettura gratuita' + (nota ? ' – ' + nota : ''); return ris; }).catch(function (e) {
+              console.warn('Lettore moderno non disponibile, uso quello di riserva:', e);
+              return leggiScansione(paginaFoto(img), avanza, { perLinea: true, cosa: 'foto', varianti: [{}, { adattiva: true }] })
+                .then(function (letture) { var ris = window.Misure.migliore(letture); ris.riserva = true; ris.lettore = 'Lettore di riserva (semplice): il lettore moderno non è partito – ' + (e && e.message || 'errore sconosciuto'); return ris; });
             });
-        lettura.then(function (ris) { fotoLettura = false; mostraMisureLette(url, ris.righe, usaAi, ris.totali); })
-          .catch(function (e) {
-            fotoLettura = false;
-            box.innerHTML = '<p class="errore">Non sono riuscito a leggere la foto: ' + esc(e.message) + '</p>';
           });
+        }
+        var lettura = usaAi
+          ? api('POST', '/api/foto/leggi', { tipo: tipo, dati: dati }).then(function (r) {
+              if (r.credito) { fotoCredito = r.credito; aggiornaCredito(); }
+              return { righe: r.righe, totali: r.totali, ai: true, lettore: 'Lettura intelligente' };
+            }).catch(function (e) {
+              // credito finito, tetto raggiunto o servizio fuori uso: si legge gratis (e non si scala niente)
+              if (e.stato === 402) {
+                if (e.dati && e.dati.credito) fotoCredito = e.dati.credito;          // credito esaurito
+                else { fotoDisponibile = false; fotoAvviso = e.message; }           // tetto di spesa raggiunto
+                aggiornaCredito();
+              }
+              var nota = e.stato === 402 ? e.message : 'la lettura intelligente non ha risposto (nessun credito scalato), ho usato quella gratuita';
+              avanza(nota);
+              return gratuita(nota);
+            })
+          : gratuita();
+        lettura.then(function (ris) {
+          fotoLettura = false;
+          var dubbi = [];
+          if (!ris.ai) { dubbi = window.Misure.dubbi(ris); if (ris.riserva) dubbi.unshift('il lettore moderno non è partito'); }
+          mostraMisureLette(url, ris.righe, !!ris.ai, ris.totali, ris.lettore, dubbi);
+        }).catch(function (e) {
+          fotoLettura = false;
+          box.innerHTML = '<p class="errore">Non sono riuscito a leggere la foto: ' + esc(e.message) + '</p>';
+        });
       }
-      function mostraMisureLette(url, righe, daAi, totali) {
+      function mostraMisureLette(url, righe, daAi, totali, lettore, dubbi) {
         var box = fotoBox.querySelector('#tf-risultato');
+        var puoiRileggere = !daAi && aiUsabile() && fotoUltima;
+        var consiglio = dubbi && dubbi.length && righe.length ? '<p class="avviso-dubbi">⚠ La lettura gratuita ha dei dubbi: ' + esc(dubbi.join(', ')) + '.' +
+          (puoiRileggere ? ' Ti consiglio la lettura intelligente.' : ' Controlla bene sulla foto.') + '</p>' : '';
+        var chiLegge = lettore ? '<p class="nota">Letto con: ' + esc(lettore) + '</p>' : '';
         if (!righe.length) {
-          box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div><h3>Non ho trovato misure</h3>' +
+          box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div><h3>Non ho trovato misure</h3>' + chiLegge +
             '<p>Cerco righe come “3 bancali 120x80x150 450 kg” oppure una tabella con le colonne Colli, Lunghezza, Larghezza, Altezza, Peso.</p>' +
-            '<p class="nota">Rifai la foto più da vicino, dritta e con buona luce.' + (fotoAi ? ' Oppure prova la lettura intelligente.' : ' I fogli scritti a mano si leggono solo con la lettura intelligente.') + '</p></div></div>';
+            '<p class="nota">Rifai la foto più da vicino, dritta e con buona luce.' + (fotoAi ? '' : ' I fogli scritti a mano si leggono solo con la lettura intelligente.') + '</p>' +
+            (puoiRileggere ? '<button class="btn btn-primario" id="tf-rileggi">Rileggi con la lettura intelligente' + prezzoAi() + '</button>' : '') + '</div></div>';
+          var rl = box.querySelector('#tf-rileggi');
+          if (rl) rl.onclick = function () { leggiFotoMisure(fotoUltima.tipo, fotoUltima.dati, 'ai'); };
           return;
         }
         var colli = righe.reduce(function (a, r) { return a + (Number(r.n) || 0); }, 0);
         box.innerHTML = '<div class="foto-letta"><img src="' + url + '" alt="Foto del foglio misure"><div>' +
-          '<h3>Trovate ' + righe.length + (righe.length === 1 ? ' riga' : ' righe') + ', ' + colli + ' colli</h3>' +
+          '<h3>Trovate ' + righe.length + (righe.length === 1 ? ' riga' : ' righe') + ', ' + colli + ' colli</h3>' + chiLegge + consiglio +
           (totali ? '<p class="controllo-totali">Confronto con la riga Totale del foglio: ' +
             (totali.colliOk == null ? '' : (totali.colliOk ? '<span class="ok">✓ colli ' + num(totali.colliLetti) + ' su ' + num(totali.colliFoglio) + '</span>' : '<span class="no">⚠ colli letti ' + num(totali.colliLetti) + ', sul foglio ' + num(totali.colliFoglio) + '</span>')) +
             (totali.pesoOk == null ? '' : ' · ' + (totali.pesoOk ? '<span class="ok">✓ peso ' + num(totali.pesoLetto, 1) + ' kg</span>' : '<span class="no">⚠ peso letto ' + num(totali.pesoLetto, 1) + ' kg, sul foglio ' + num(totali.pesoFoglio, 1) + ' kg</span>')) + '</p>' : '') +
@@ -1703,7 +1760,9 @@
             return '<tr' + (r.incompleta ? ' class="da-controllare"' : '') + '><td>' + (r.incompleta ? '⚠ ' : '') + esc(r.nome || '–') + '</td><td class="num">' + esc(r.n) + '</td><td class="num">' + esc(r.l) + '</td><td class="num">' + esc(r.p) + '</td><td class="num">' + esc(r.h) + '</td>' +
               '<td class="num">' + (r.peso !== '' ? esc(r.peso) + ' kg' : '–') + '</td><td>' + (r.impilabile === false ? 'Sì' : '') + '</td></tr>';
           }).join('') + '</tbody></table></div>' +
-          '<div class="riga-azioni"><button class="btn btn-primario" id="tf-sostituisci">Usa queste righe</button><button class="btn" id="tf-aggiungi">Aggiungi alle righe già inserite</button><button class="btn-testo" id="tf-scarta">Scarta</button></div>' +
+          '<div class="riga-azioni"><button class="btn btn-primario" id="tf-sostituisci">Usa queste righe</button><button class="btn" id="tf-aggiungi">Aggiungi alle righe già inserite</button>' +
+            (puoiRileggere ? '<button class="btn' + (consiglio ? ' btn-primario' : '') + '" id="tf-rileggi">' + (consiglio ? 'Rileggi' : 'Non torna? Rileggi') + ' con la lettura intelligente' + prezzoAi() + '</button>' : '') +
+            '<button class="btn-testo" id="tf-scarta">Scarta</button></div>' +
           '</div></div>';
         function inserisci(sostituisci) {
           var nuove = righe.map(function (r) {
@@ -1721,13 +1780,15 @@
         box.querySelector('#tf-sostituisci').onclick = function () { inserisci(true); };
         box.querySelector('#tf-aggiungi').onclick = function () { inserisci(false); };
         box.querySelector('#tf-scarta').onclick = function () { box.innerHTML = ''; };
+        var rileggi = box.querySelector('#tf-rileggi');
+        if (rileggi) rileggi.onclick = function () { leggiFotoMisure(fotoUltima.tipo, fotoUltima.dati, 'ai'); };
       }
       main.querySelector('#t-foto').onclick = function () {
         if (!fotoBox.hidden) { chiudiFoto(); return; }
         fotoBox.hidden = false;
         fotoBox.innerHTML = '<p class="nota">Preparo il collegamento…</p>';
         api('GET', '/api/foto/stato').catch(function () { return { ai: false }; }).then(function (st) {
-          fotoAi = !!st.ai;
+          fotoAi = !!st.ai; fotoDisponibile = !!st.disponibile; fotoAvviso = st.avviso || null; fotoCredito = st.credito || null;
           fotoBox.innerHTML =
             '<div class="testata-pannello"><h2>Leggi le misure da una foto</h2><button class="btn-testo" id="tf-chiudi">Chiudi</button></div>' +
             '<div class="foto-collega">' +
@@ -1738,8 +1799,8 @@
                 '<p class="nota">Dal telefono non serve accedere. Il codice vale 30 minuti. <a href="#" id="tf-link">Copia il link</a> per mandarlo con un messaggio.</p>' +
                 '<h3 style="margin-top:18px">Oppure da questo computer</h3>' +
                 '<label class="btn" style="cursor:pointer">Scegli una foto<input type="file" id="tf-file" accept="image/jpeg,image/png,image/webp" hidden></label>' +
-                (fotoAi ? '<label class="spunta" style="margin-top:12px"><input type="checkbox" id="tf-ai" checked> Lettura intelligente (legge anche i fogli scritti a mano)</label>'
-                  : '<p class="nota" style="margin-top:10px">Lettura gratuita: legge fogli stampati. Per i fogli scritti a mano serve la lettura intelligente.</p>') +
+                (fotoAi ? '<p class="nota" style="margin-top:10px">Per ogni foto scegli tu: <b>lettura gratuita</b> o <b>lettura intelligente</b>' + prezzoAi().replace(' · ', ' (') + (prezzoAi() ? ')' : '') + '.</p><p class="nota" id="tf-credito">' + esc(testoCredito()) + '</p>'
+                  : '<p class="nota" style="margin-top:10px">Lettura gratuita: legge fogli stampati.</p>') +
               '</div>' +
             '</div>' +
             '<div id="tf-risultato"></div>';
@@ -2630,12 +2691,28 @@
     api('GET', '/api/aziende').then(function (risp) {
       var aziende = risp.aziende, funzioni = risp.funzioni;
       var attive = aziende.filter(function (a) { return a.attiva; }).length;
+      var ai = risp.ai || { totaleMese: 0, limiteTotale: 0 };
+      function dollari(v) { return '$ ' + num(v || 0, 2); }
+      function euro(v) { return num(v || 0, 2) + ' €'; }
       var main = guscio('aziende',
-        '<div class="testata"><div><h1>Aziende clienti</h1><p>' + aziende.length + ' aziende, di cui ' + attive + ' attive. Ogni azienda vede solo i propri mezzi, piani e utenti.</p></div></div>' +
-        (aziende.length ? '<div class="pannello tabella-scroll"><table><thead><tr><th>Azienda</th><th>Titolare</th><th class="num">Utenti</th><th class="num">Mezzi</th><th class="num">Piani</th><th>Funzioni attive</th><th>Dal</th><th>Stato</th><th></th></tr></thead><tbody>' +
+        '<div class="testata"><div><h1>Aziende clienti</h1><p>' + aziende.length + ' aziende, di cui ' + attive + ' attive. Ogni azienda vede solo i propri mezzi, piani e utenti.</p>' +
+        '<p class="nota">Lettura intelligente questo mese: <b>' + dollari(ai.totaleMese) + '</b> di costo verso i fornitori, su un tetto totale di ' + dollari(ai.limiteTotale) +
+        (ai.credito ? ' · prezzo ai clienti ' + num(ai.prezzo, 2) + ' € a lettura' : '') +
+        ' · <a href="#/prova-lettura">Prova e confronta i lettori</a></p></div></div>' +
+        (aziende.length ? '<div class="pannello tabella-scroll"><table><thead><tr><th>Azienda</th><th>Titolare</th><th class="num">Utenti</th><th class="num">Mezzi</th><th class="num">Piani</th><th class="num">Lettura intelligente</th><th>Funzioni attive</th><th>Dal</th><th>Stato</th><th></th></tr></thead><tbody>' +
           aziende.map(function (a) {
             return '<tr class="' + (a.attiva ? '' : 'spento') + '"><td><a href="#/aziende/' + a.id + '"><b>' + esc(a.nome) + '</b></a></td><td>' + esc(a.email_titolare || '') + '</td>' +
               '<td class="num"><a href="#/aziende/' + a.id + '">' + a.utenti + '</a></td><td class="num">' + a.mezzi + '</td><td class="num">' + a.piani + '</td>' +
+              '<td class="num spesa-ai">' + (function (x, k) {
+                if (!x) return '';
+                var pieno = x.limite != null && x.limite > 0 && x.mese >= x.limite;
+                var credito = ai.credito && k ? '<b>' + euro(k.saldo) + '</b> <span class="nota">(' + num(Math.max(0, Math.floor((k.saldo + 1e-9) / ai.prezzo))) + ' lett.)</span>' +
+                  '<br><button class="btn-testo" data-ricarica="' + a.id + '">Ricarica</button> <button class="btn-testo" data-storico="' + a.id + '">Storico</button>' +
+                  '<br><span class="nota">questo mese ' + k.lettureMese + ' lett. · incassati ' + euro(k.incassoMese) + '</span><br>' : '';
+                return credito + '<span class="nota">tuo costo: <b class="' + (pieno ? 'no' : '') + '">' + dollari(x.mese) + '</b> (' + x.lettureMese + ') · mese scorso ' + dollari(x.meseScorso) + '</span>' +
+                  '<br><button class="btn-testo" data-limite="' + a.id + '" data-valore="' + (x.predefinito ? '' : x.limite) + '">' +
+                  (x.limite === null ? 'Nessun tetto' : x.limite <= 0 ? 'Spenta' : 'Tetto ' + dollari(x.limite)) + (x.predefinito ? ' (base)' : '') + '</button>';
+              })(a.ai, a.credito) + '</td>' +
               '<td class="funzioni-azienda">' + funzioni.map(function (f) {
                 return '<label class="spunta"><input type="checkbox" data-fz="' + a.id + '" data-id="' + f.id + '"' + (a.funzioni[f.id] ? ' checked' : '') + '> ' + esc(f.nome) + '</label>';
               }).join('') + '</td><td>' + data(a.creata_il) + '</td>' +
@@ -2662,6 +2739,35 @@
             .catch(function (err) { avvisa(err.message); c.checked = !c.checked; });
         };
       });
+      main.querySelectorAll('[data-ricarica]').forEach(function (b) {
+        b.onclick = function () {
+          var v = window.prompt('Quanti euro di credito carichi per la lettura intelligente?\n\nEsempio: 50 (pacchetto pagato dal cliente).\nCon un numero negativo togli credito (correzione).\n\nOgni lettura intelligente scala ' + num(ai.prezzo, 2) + ' €.', '50');
+          if (v === null || !String(v).trim()) return;
+          var nota = window.prompt('Nota (facoltativa), per esempio il numero della fattura:', '') || '';
+          api('POST', '/api/aziende/' + b.dataset.ricarica + '/credito', { importo: v, nota: nota })
+            .then(function (r) { avvisa('Credito aggiornato: ' + euro(r.saldo)); vistaAziende(); })
+            .catch(function (err) { avvisa(err.message); });
+        };
+      });
+      main.querySelectorAll('[data-storico]').forEach(function (b) {
+        b.onclick = function () {
+          api('GET', '/api/aziende/' + b.dataset.storico + '/credito').then(function (r) {
+            window.alert('Credito attuale: ' + euro(r.saldo) + '\n\nUltime ricariche e correzioni:\n' + (r.movimenti.length ? r.movimenti.map(function (m) {
+              return '• ' + dataOra(m.creato_il) + '  ' + (m.importo > 0 ? '+' : '') + euro(m.importo) + (m.nota ? '  – ' + m.nota : '') + (m.utente ? '  (' + m.utente + ')' : '');
+            }).join('\n') : 'nessuna'));
+          }).catch(function (err) { avvisa(err.message); });
+        };
+      });
+      main.querySelectorAll('[data-limite]').forEach(function (b) {
+        b.onclick = function () {
+          var v = window.prompt('Tetto di spesa mensile della lettura intelligente per questa azienda, in dollari.\n\n' +
+            '• Scrivi un importo, per esempio 20\n• Scrivi 0 per spegnerla\n• Lascia vuoto per usare il valore base (' + num(risp.ai.limitePredefinito, 2) + ' $)\n\n' +
+            'Raggiunto il tetto, fino al primo del mese l’azienda usa la lettura gratuita.', b.dataset.valore);
+          if (v === null) return;
+          api('PATCH', '/api/aziende/' + b.dataset.limite, { limiteAi: v }).then(function () { avvisa('Tetto aggiornato'); vistaAziende(); })
+            .catch(function (err) { avvisa(err.message); });
+        };
+      });
       main.querySelectorAll('[data-az]').forEach(function (b) {
         b.onclick = function () {
           var attiva = b.dataset.attiva === 'true';
@@ -2672,8 +2778,94 @@
     }).catch(errorePagina);
   }
 
+  // ---------- Prova e confronto dei lettori (super amministratore) ----------
+  // La stessa foto letta da tutti i lettori disponibili, uno accanto all'altro, con tempo e costo.
+  function vistaProvaLettura() {
+    api('GET', '/api/foto/prova').then(function (info) {
+      var chiavi = { anthropic: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY', mistral: 'MISTRAL_API_KEY' };
+      var lettori = [{ id: 'gratuito', nome: 'Gratuito (sul computer)', modello: 'PaddleOCR', attivo: true }].concat(info.fornitori);
+      var main = guscio('prova-lettura',
+        '<div class="testata"><div><h1>Prova lettura</h1><p>Fai leggere la stessa foto a tutti i lettori e confronta i risultati. Le celle in giallo sono quelle su cui i lettori non sono d’accordo: guardale sulla foto per capire chi ha ragione.</p></div></div>' +
+        '<div class="pannello"><h2>Lettori</h2><div class="lettori-prova">' + lettori.map(function (l) {
+          return '<label class="spunta' + (l.attivo ? '' : ' spento') + '"><input type="checkbox" data-lettore="' + l.id + '"' + (l.attivo ? ' checked' : ' disabled') + '> <b>' + esc(l.nome) + '</b> <span class="nota">' +
+            (l.attivo ? esc(l.modello) + (info.predefinito === l.id ? ' · usato dai clienti' : '') : 'non attivo: manca ' + chiavi[l.id] + ' su Railway') + '</span></label>';
+        }).join('') + '</div>' +
+        '<p class="nota">Le letture di prova costano come quelle vere e contano nel tetto di spesa totale, non in quello dei clienti.</p>' +
+        '<label class="btn btn-primario" style="cursor:pointer;margin-top:8px">Scegli una foto da provare<input type="file" id="pl-file" accept="image/jpeg,image/png,image/webp" hidden></label></div>' +
+        '<div id="pl-risultati"></div>');
+      main.querySelector('#pl-file').onchange = function () {
+        var file = this.files[0]; this.value = '';
+        if (!file) return;
+        var scelti = lettori.filter(function (l) { var c = main.querySelector('[data-lettore="' + l.id + '"]'); return c && c.checked; });
+        if (!scelti.length) { avvisa('Scegli almeno un lettore'); return; }
+        leggiFile(file, true).then(function (u) { return immagineDaUrlProva(u); }).then(function (img) {
+          // stessa foto per tutti, ridotta come fa il telefono (lato lungo 2400 px)
+          var k = Math.min(1, 2400 / Math.max(img.naturalWidth, img.naturalHeight));
+          var c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+          var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+          var url = c.toDataURL('image/jpeg', 0.85);
+          return immagineDaUrlProva(url).then(function (ridotta) { confronta(url, ridotta, scelti); });
+        }).catch(function (e) { avvisa(e.message); });
+      };
+      function confronta(url, img, scelti) {
+        var box = main.querySelector('#pl-risultati');
+        box.innerHTML = '<div class="pannello prova-foto"><img src="' + url + '" alt="Foto da leggere"></div><div class="griglia-prova">' + scelti.map(function (l) {
+          return '<div class="pannello scheda-prova" id="pl-' + l.id + '"><h3>' + esc(l.nome) + '</h3><p class="nota">' + esc(l.modello) + '</p><p class="nota pl-stato">In attesa…</p><div class="pl-corpo"></div></div>';
+        }).join('') + '</div>';
+        var esiti = {};
+        var lavori = scelti.map(function (l) {
+          var scheda = box.querySelector('#pl-' + l.id), st = scheda.querySelector('.pl-stato');
+          var t0 = Date.now();
+          var p = l.id === 'gratuito'
+            ? leggiConPaddle(img, function (t) { st.textContent = t; }).then(function (r) { r.secondi = Math.round((Date.now() - t0) / 100) / 10; r.costoUsd = 0; return r; })
+            : (st.textContent = 'Lettura in corso…', api('POST', '/api/foto/prova', { fornitore: l.id, tipo: 'image/jpeg', dati: url.split(',')[1] }));
+          return p.then(function (r) { esiti[l.id] = r; disegna(scheda, r); })
+            .catch(function (e) { st.innerHTML = '<span class="errore">' + esc(e.message) + '</span>'; });
+        });
+        Promise.all(lavori).then(function () { evidenziaDifferenze(box, esiti); });
+      }
+      function disegna(scheda, r) {
+        var colli = r.righe.reduce(function (a, x) { return a + (Number(x.n) || 0); }, 0);
+        scheda.querySelector('.pl-stato').innerHTML = '<b>' + num(r.secondi, 1) + ' s</b> · ' +
+          (r.costoUsd ? '<b>$ ' + num(r.costoUsd, 4) + '</b> (≈ ' + num(r.costoUsd * 100, 2) + ' centesimi)' : '<b>gratis</b>') +
+          (r.tokIn ? ' · ' + num(r.tokIn) + ' + ' + num(r.tokOut) + ' token' : '');
+        var t = r.totali;
+        scheda.querySelector('.pl-corpo').innerHTML = '<p><b>' + r.righe.length + ' righe, ' + colli + ' colli</b></p>' +
+          (t ? '<p class="controllo-totali">Totale del foglio: ' +
+            (t.colliOk == null ? '' : (t.colliOk ? '<span class="ok">✓ colli</span>' : '<span class="no">⚠ colli ' + num(t.colliLetti) + ' / ' + num(t.colliFoglio) + '</span>')) +
+            (t.pesoOk == null ? '' : ' · ' + (t.pesoOk ? '<span class="ok">✓ peso</span>' : '<span class="no">⚠ peso ' + num(t.pesoLetto, 1) + ' / ' + num(t.pesoFoglio, 1) + '</span>')) + '</p>' : '') +
+          '<div class="tabella-scroll"><table class="tab-colli"><thead><tr><th class="num">#</th><th class="num">Colli</th><th class="num">L</th><th class="num">P</th><th class="num">H</th><th class="num">Peso</th><th>NS</th></tr></thead><tbody>' +
+          r.righe.map(function (x, i) {
+            return '<tr' + (x.incompleta ? ' class="da-controllare"' : '') + '><td class="num">' + (i + 1) + '</td>' + ['n', 'l', 'p', 'h', 'peso'].map(function (k) {
+              return '<td class="num" data-riga="' + i + '" data-k="' + k + '">' + esc(x[k] === '' ? '–' : x[k]) + '</td>';
+            }).join('') + '<td data-riga="' + i + '" data-k="ns">' + (x.impilabile === false ? 'Sì' : '') + '</td></tr>';
+          }).join('') + '</tbody></table></div>';
+      }
+      function evidenziaDifferenze(box, esiti) {
+        var ids = Object.keys(esiti);
+        if (ids.length < 2) return;
+        var max = Math.max.apply(null, ids.map(function (id) { return esiti[id].righe.length; }));
+        for (var i = 0; i < max; i++) {
+          ['n', 'l', 'p', 'h', 'peso', 'ns'].forEach(function (k) {
+            var valori = ids.map(function (id) { var x = esiti[id].righe[i]; return x ? String(k === 'ns' ? x.impilabile === false : x[k]) : '(manca)'; });
+            if (valori.every(function (v) { return v === valori[0]; })) return;
+            ids.forEach(function (id) { var c = box.querySelector('#pl-' + id + ' [data-riga="' + i + '"][data-k="' + k + '"]'); if (c) c.classList.add('diversa'); });
+          });
+        }
+      }
+    }).catch(errorePagina);
+  }
+  function immagineDaUrlProva(url) {
+    return new Promise(function (ok, ko) {
+      var img = new Image();
+      img.onload = function () { ok(img); };
+      img.onerror = function () { ko(new Error('Foto non leggibile.')); };
+      img.src = url;
+    });
+  }
+
   // ---------- Backup (super amministratore) ----------
-  var NOMI_TABELLE = [['aziende', 'Aziende'], ['utenti', 'Utenti'], ['mezzi', 'Mezzi'], ['complessi', 'Complessi veicolari'], ['colli_salvati', 'Colli salvati'], ['piani', 'Piani di carico'], ['viaggi', 'Viaggi'], ['attivita', 'Registro attività']];
+  var NOMI_TABELLE = [['aziende', 'Aziende'], ['utenti', 'Utenti'], ['mezzi', 'Mezzi'], ['complessi', 'Complessi veicolari'], ['colli_salvati', 'Colli salvati'], ['piani', 'Piani di carico'], ['viaggi', 'Viaggi'], ['attivita', 'Registro attività'], ['consumi_ai', 'Letture intelligenti'], ['crediti_ai', 'Credito lettura intelligente']];
 
   function dataOra(iso) {
     var d = new Date(iso);
@@ -3097,6 +3289,7 @@
     if (admin) {
       if (sez === 'account') return vistaAccount();
       if (sez === 'backup') return vistaBackup();
+      if (sez === 'prova-lettura') return vistaProvaLettura();
       if (sez === 'statistiche') return parti[1] ? vistaStatAzienda(Number(parti[1])) : vistaStatistiche();
       if (sez === 'aziende' && parti[1]) return vistaUtentiAzienda(Number(parti[1]));
       return vistaAziende();

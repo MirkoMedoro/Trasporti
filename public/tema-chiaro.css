@@ -1,0 +1,174 @@
+/* =====================================================================
+   Stiva · nuovo look "chiaro" (proposta A)
+   Questo file si carica DOPO app.css e cambia solo l'aspetto.
+   Per tornare al look di prima basta togliere da index.html la riga
+   <link rel="stylesheet" href="/tema-chiaro.css...">  (o ricaricare
+   index.html dalla copia "prima del nuovo look").
+   ===================================================================== */
+:root {
+  --nero: #0E0F11;
+  --inchiostro: #15171A;
+  --grigio: #5B6068;
+  --grigio-chiaro: #9AA0A8;
+  --linea: #E4E0D8;
+  --linea-tenue: #EFEBE3;
+  --fondo: #F3F1EC;
+  --carta: #FFFFFF;
+  --giallo: #F5B800;
+  --giallo-scuro: #DDA600;
+  --giallo-tenue: #FFF3CC;
+  --verde: #1E7A4C;
+  --verde-tenue: #E3F2EA;
+  --rosso: #B42318;
+  --rosso-tenue: #FDECEA;
+  --raggio: 18px;
+  --raggio-piccolo: 12px;
+}
+
+body { background: var(--fondo); }
+h1 { font-family: var(--titoli); font-size: 48px; font-weight: 700; line-height: 1; letter-spacing: 0; }
+h2 { font-weight: 700; }
+
+/* ---------- Barra laterale ---------- */
+.barra { background: var(--nero); padding: 24px 16px; }
+.marchio { padding: 0 8px 18px; }
+.marchio-segno { width: 30px; height: 30px; border-radius: 8px; }
+.marchio-segno::after { left: 7px; right: 7px; bottom: 7px; height: 4px; border-radius: 1px; }
+.marchio span { font-size: 27px; letter-spacing: 0.3px; }
+.azienda-nome { padding: 0 8px 18px; border-bottom: 1px solid #1F2125; color: #8A8F97; }
+.menu { gap: 4px; }
+.menu a, .menu-titolo { border-left: 0; border-radius: 10px; padding: 11px 12px; color: #D3D6DB; font-size: 15px; }
+.menu a:hover, .menu-titolo:hover { background: #1A1C20; color: #FFFFFF; }
+.menu a.attivo { background: var(--giallo); color: var(--nero); font-weight: 600; border-left: 0; }
+.menu a.attivo:hover { background: var(--giallo); color: var(--nero); }
+.menu a.figlia { padding-left: 24px; }
+.barra-fondo { border-top: 0; margin: auto 0 0; padding: 12px; background: #1A1C20; border-radius: 12px; }
+.barra-fondo button { color: #A2A7AE; }
+
+/* ---------- Contenuto ---------- */
+.contenuto { padding: 36px 44px 64px; max-width: 1320px; }
+.testata { margin-bottom: 28px; }
+.testata p { color: var(--grigio); font-size: 16px; }
+
+/* ---------- Riquadri ---------- */
+.pannello { background: var(--carta); border: 1px solid var(--linea); border-radius: var(--raggio); padding: 24px; }
+.pannello + .pannello, .blocco + .blocco { margin-top: 20px; }
+.vista { background: var(--carta); border-radius: var(--raggio); overflow: hidden; }
+.vista-testa { border-bottom-color: var(--linea-tenue); }
+.nota { color: var(--grigio); }
+
+/* ---------- Pulsanti ---------- */
+.btn { border-radius: var(--raggio-piccolo); border: 1px solid #D6D1C6; background: var(--carta); padding: 11px 18px; min-height: 44px; font-weight: 600; }
+.btn:hover { background: #F7F5F0; border-color: #C9C3B6; }
+.btn-primario { background: var(--giallo); border-color: var(--giallo); color: var(--nero); }
+.btn-primario:hover { background: var(--giallo-scuro); border-color: var(--giallo-scuro); }
+.btn-scuro { background: var(--inchiostro); border-color: var(--inchiostro); color: #FFFFFF; }
+.btn-scuro:hover { background: #2A2D32; border-color: #2A2D32; }
+.btn-piccolo { min-height: 34px; padding: 6px 12px; border-radius: 10px; }
+.btn-icona { border-radius: 10px; }
+.btn-testo { text-decoration: none; font-weight: 600; color: var(--inchiostro); }
+.btn-testo:hover { text-decoration: underline; }
+
+/* ---------- Campi ---------- */
+input[type=text], input[type=email], input[type=password], input[type=number], input[type=search], input[type=date], select, textarea {
+  border: 1px solid #D6D1C6; border-radius: 10px; background: var(--carta); min-height: 42px;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--inchiostro); box-shadow: 0 0 0 3px rgba(245,184,0,.35); outline: 0; }
+.spunta input, .tab-colli input[type=checkbox] { accent-color: var(--inchiostro); }
+
+/* ---------- Tabelle ---------- */
+th { color: var(--grigio); font-weight: 600; border-bottom: 2px solid var(--inchiostro); }
+td { border-bottom: 1px solid var(--linea-tenue); }
+tr:hover td { background: #FBFAF7; }
+.tab-colli input[type=number], .tab-colli input[type=text], .tab-tassato input[type=number] { border-radius: 8px; }
+
+/* ---------- Etichette e avvisi ---------- */
+.etichetta { border-radius: 20px; padding: 3px 10px; font-weight: 600; border: 0; background: #EFEBE3; }
+.etichetta.ok, .etichetta.rev-ok { background: var(--verde-tenue); color: var(--verde); }
+.etichetta.no { background: var(--rosso-tenue); color: var(--rosso); }
+.etichetta.rev-vicina { background: var(--giallo-tenue); color: #6B4E00; }
+.etichetta.rev-scaduta { background: var(--rosso); color: #FFFFFF; }
+.avviso { border-left: 0; border-radius: 14px; background: var(--rosso-tenue); padding: 14px 18px; }
+.avviso.giallo { background: var(--giallo-tenue); }
+.avviso.verde { background: var(--verde-tenue); }
+.avviso-home { border: 0; border-radius: var(--raggio); background: var(--giallo-tenue); padding: 16px 20px; max-width: none; }
+.avviso-home.rosso { background: var(--rosso-tenue); }
+.avviso-home svg { background: var(--giallo); border-radius: 12px; padding: 9px; width: 42px; height: 42px; box-sizing: border-box; }
+.avviso-home.rosso svg { background: #F8C9C2; }
+
+/* ---------- Home: scorciatoie ---------- */
+.scorciatoie { max-width: none; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.scorciatoia { background: var(--carta); border: 1px solid var(--linea); border-radius: var(--raggio); padding: 24px; gap: 12px; transition: transform .12s, box-shadow .12s; }
+.scorciatoia svg { width: 52px; height: 52px; padding: 13px; box-sizing: border-box; border-radius: 14px; background: var(--giallo-tenue); }
+.scorciatoia:first-child svg { background: var(--giallo); }
+.scorciatoia strong { font-family: var(--testo); font-size: 20px; font-weight: 700; }
+.scorciatoia:hover { border-color: var(--linea); transform: translateY(-2px); box-shadow: 0 10px 24px rgba(21,23,26,.08); }
+.scorciatoia:hover::after { display: none; }
+.avviso-home + .scorciatoie, .scorciatoie { margin-top: 4px; }
+
+/* ---------- Risultati (piano di carico, viaggi) ---------- */
+.cruscotto { border: 0; border-radius: var(--raggio); background: var(--inchiostro); color: #FFFFFF; overflow: hidden; }
+.cruscotto > div { border-right: 1px solid #2A2D32; padding: 18px 20px; }
+.cruscotto .valore { font-weight: 700; font-size: 32px; }
+.cruscotto .desc { color: #B9BDC4; }
+.cruscotto .barretta { background: #2F3238; border-radius: 4px; height: 6px; }
+.cruscotto .barretta i { background: var(--giallo); border-radius: 4px; }
+.cruscotto .barretta i.pieno { background: #FF7A66; }
+.cruscotto-viaggio .evidenza { background: var(--giallo); color: var(--nero); }
+.cruscotto-viaggio .evidenza .desc { color: var(--nero); }
+.conteggi { border: 0; gap: 12px; }
+.conteggi > div { background: var(--carta); border: 1px solid var(--linea); border-radius: 14px; margin: 0; }
+
+/* ---------- Calcolatore: barra dei risultati ---------- */
+.tassato-cruscotto { border: 0; border-radius: var(--raggio); background: var(--inchiostro); color: #FFFFFF; overflow: hidden; box-shadow: 0 -8px 24px rgba(21,23,26,.10); }
+.tassato-cruscotto > div { border-right: 1px solid #2A2D32; padding: 14px 18px; }
+.tassato-cruscotto .desc, .tassato-cruscotto > div > small { color: #B9BDC4; }
+.tassato-cruscotto b { font-weight: 700; }
+.tassato-cruscotto .principale { background: var(--giallo); color: var(--nero); border-right: 0; }
+.tassato-cruscotto .principale b { font-size: 34px; }
+.tassato-cruscotto .principale small.arrotondato { border-top-color: rgba(0,0,0,.15); }
+
+/* ---------- Calcolatore: foto ---------- */
+.foto-qr { border-radius: 16px; border-color: var(--linea); }
+.foto-letta { border-top-color: var(--linea-tenue); }
+.foto-letta img { border-radius: 12px; }
+.scelta-lettura .btn { border-radius: 14px; padding: 14px 16px; }
+.scelta-lettura .btn-primario b { font-size: 16px; }
+.avviso-dubbi { border-left: 0; border-radius: 12px; background: var(--giallo-tenue); padding: 10px 14px; }
+tr.da-controllare td { background: #FFF8E1; }
+
+/* ---------- Ottimizza giro ---------- */
+.tappa-num { border-radius: 50%; background: var(--giallo); border: 0; color: var(--nero); font-weight: 700; }
+.etichetta.tipo-consegna { background: var(--verde-tenue); color: var(--verde); border: 0; }
+.etichetta.tipo-ritiro { background: #E6EEF8; color: #1D5FA8; border: 0; }
+.mappa { border-radius: var(--raggio); overflow: hidden; border: 1px solid var(--linea); }
+
+/* ---------- Scadenze e filtri ---------- */
+.filtro { border-radius: 14px; background: var(--carta); border-color: var(--linea); }
+.filtro.attivo { border-color: var(--inchiostro); box-shadow: inset 0 -3px 0 var(--giallo); }
+
+/* ---------- Finestre di conferma e messaggi ---------- */
+.dialogo { border-radius: var(--raggio); border-top: 0; box-shadow: 0 24px 60px rgba(0,0,0,.25); }
+#toast { border-radius: 12px; }
+
+/* ---------- Accesso ---------- */
+.accesso-form { background: var(--fondo); }
+.accesso-form form { background: var(--carta); border: 1px solid var(--linea); border-radius: 22px; padding: 32px; max-width: 420px; }
+.accesso-lato h1 { font-size: 60px; }
+
+/* ---------- Telefono e schermi piccoli ---------- */
+@media (max-width: 760px) {
+  .contenuto { padding: 22px 16px 48px; }
+  h1 { font-size: 36px; }
+  .barra { padding: 12px; }
+  .barra-fondo { display: none; }
+  .menu a.attivo { border-radius: 10px; }
+}
+
+/* ---------- Stampa: resta tutto bianco ---------- */
+@media print {
+  body { background: #FFFFFF; }
+  .pannello, .vista { border-radius: 0; }
+  .cruscotto, .tassato-cruscotto { background: #FFFFFF; color: #000000; border: 1px solid #000000; box-shadow: none; }
+  .cruscotto .desc, .tassato-cruscotto .desc { color: #333333; }
+}

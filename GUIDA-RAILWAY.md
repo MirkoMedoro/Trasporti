@@ -147,13 +147,61 @@ la riga "Total", il programma controlla che colli e peso tornino. La non
 sovrapponibilità la decide l'operatore con la spunta nel Calcolatore.
 
 Per packing list lunghe, con caratteri piccoli o scritte a mano conviene la
-lettura intelligente (chiave `ANTHROPIC_API_KEY`): segue le stesse regole e
-costa indicativamente 2–3 centesimi di dollaro a foto con il modello
-predefinito (Claude Sonnet 5). Controlla il listino aggiornato su
-https://platform.claude.com e imposta un limite di spesa mensile nella Console. Con la chiave
-`ANTHROPIC_API_KEY` si attiva la lettura intelligente, che legge anche i fogli
-scritti a mano. Le foto non vengono salvate: restano in memoria solo il tempo
-di passarle al computer.
+**lettura intelligente** (a pagamento, a consumo): segue le stesse regole e
+capisce da sola quale numero è un peso, una misura o il totale. Le foto non
+vengono salvate: restano in memoria solo il tempo di passarle al computer.
+
+## Lettura intelligente: fornitori, tetti di spesa e prove
+
+Su Railway, nelle **Variables**, metti la chiave di uno o più fornitori:
+
+| Variabile | Fornitore | Modello predefinito | Costo indicativo a foto |
+|---|---|---|---|
+| `GEMINI_API_KEY` | Google (piano a pagamento) | `gemini-3.8-flash` | ~0,7 centesimi di $ |
+| `MISTRAL_API_KEY` | Mistral (Francia) | `mistral-large-latest` | < 1 centesimo di $ |
+| `ANTHROPIC_API_KEY` | Anthropic | `claude-sonnet-5-5` | ~2,5 centesimi di $ |
+
+- `LETTURA_AI` = `gemini`, `mistral` o `anthropic`: quale usano i clienti nel
+  Calcolatore (se manca, il primo che ha la chiave). La lettura del borderò in
+  Ottimizza giro usa Anthropic.
+- Il modello si può cambiare con `GEMINI_MODEL`, `MISTRAL_MODEL`, `ANTHROPIC_MODEL`.
+- Con Google usa solo il **piano a pagamento** (con fatturazione attiva): la
+  versione gratuita non è permessa per servizi offerti a utenti in Europa.
+
+**Credito dei clienti (pacchetti prepagati, in euro)**
+
+- Ogni lettura intelligente fatta da un cliente scala dal suo credito
+  `PREZZO_LETTURA_AI` euro (predefinito **0,03**). Una lettura che non riesce
+  non scala niente. `PREZZO_LETTURA_AI=0` spegne il sistema a credito.
+- Quando il cliente paga un pacchetto (es. 50 €), nella lista **Aziende
+  clienti**, colonna *Lettura intelligente*, premi **Ricarica** e scrivi
+  l'importo (con un numero negativo correggi un errore). **Storico** mostra
+  ricariche e correzioni.
+- Nel Calcolatore, per ogni foto l'operatore sceglie con due tasti:
+  **Lettura gratuita** oppure **Lettura intelligente · 3 cent**, e vede il
+  credito rimasto. Se la lettura gratuita ha dubbi (righe poco leggibili,
+  Totale che non torna, valori impossibili, ultima riga che è il Totale) lo
+  dice e propone **Rileggi con la lettura intelligente**: non scala mai niente
+  da sola. Credito finito = resta la lettura gratuita.
+- La lettura intelligente del borderò in Ottimizza giro non scala il credito
+  (conta solo nei tetti qui sotto).
+
+**Tetti di spesa verso i fornitori** (in dollari, si azzerano il primo del mese):
+
+- `LIMITE_AI_TOTALE` — tetto mensile di tutto il programma (predefinito 100).
+- `LIMITE_AI_AZIENDA` — tetto mensile base per azienda (predefinito: nessuno,
+  perché il credito prepagato fa già da limite). Nella lista clienti puoi
+  mettere un tetto a un cliente cliccandoci sopra (0 = lettura intelligente
+  spenta per quel cliente).
+- La colonna *Lettura intelligente* mostra per ogni cliente: credito rimasto,
+  letture e incasso del mese, e il **tuo costo** verso il fornitore (mese e
+  mese scorso): così vedi il margine e chi lavora di più.
+- Conviene impostare un limite anche nel sito del fornitore (o usare la
+  ricarica prepagata), come seconda protezione.
+
+**Prova lettura** (menu del super amministratore): scegli una foto e la fai
+leggere a tutti i lettori attivi, uno accanto all'altro, con tempo e costo.
+Le celle in giallo sono quelle su cui i lettori non sono d'accordo.
 
 ## Ottimizza giro
 

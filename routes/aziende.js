@@ -5,6 +5,7 @@ const { pool } = require('../db');
 const { richiediLogin, richiediRuolo } = require('../auth');
 const { testo, emailValida } = require('../validazione');
 const { FUNZIONI, funzioniAttive } = require('../funzioni');
+const consumi = require('../consumiAi');
 
 const r = express.Router();
 r.use(richiediLogin, richiediRuolo('superadmin'));
@@ -12,14 +13,25 @@ r.use(richiediLogin, richiediRuolo('superadmin'));
 r.get('/', async (req, res, next) => {
   try {
     const { rows } = await pool.query(`
-      SELECT a.id, a.nome, a.attiva, a.creata_il, a.funzioni,
+      SELECT a.id, a.nome, a.attiva, a.creata_il, a.funzioni, a.limite_ai_mese::float AS limite_ai_mese,
         (SELECT COUNT(*)::int FROM utenti u WHERE u.azienda_id=a.id) AS utenti,
         (SELECT COUNT(*)::int FROM mezzi m WHERE m.azienda_id=a.id) AS mezzi,
         (SELECT COUNT(*)::int FROM piani p WHERE p.azienda_id=a.id) AS piani,
         (SELECT u.email FROM utenti u WHERE u.azienda_id=a.id AND u.ruolo='admin' ORDER BY u.id LIMIT 1) AS email_titolare
       FROM aziende a ORDER BY a.nome`);
-    rows.forEach((r) => { r.funzioni = funzioniAttive(r.funzioni); });
-    res.json({ aziende: rows, funzioni: FUNZIONI });
+    const spese = await consumi.riepilogoAziende();
+    const saldi = await consumi.saldiAziende();
+    rows.forEach((r) => {
+      r.funzioni = funzioniAttive(r.funzioni);
+      const c = spese.perAzienda[r.id] || {};
+      r.ai = {
+        mese: c.mese || 0, lettureMese: c.letture_mese || 0, meseScorso: c.mese_scorso || 0, lettureMeseScorso: c.letture_mese_scorso || 0,
+        limite: r.limite_ai_mese === null ? spese.limitePredefinito : r.limite_ai_mese, predefinito: r.limite_ai_mese === null,
+      };
+      const k = saldi[r.id] || {};
+      r.credito = { saldo: k.saldo || 0, lettureMese: k.letture_mese || 0, incassoMese: k.incasso_mese || 0, ultimaRicarica: k.ultima_ricarica || null };
+    });
+    res.json({ aziende: rows, funzioni: FUNZIONI, ai: { totaleMese: spese.totaleMese, limiteTotale: spese.limiteTotale, limitePredefinito: spese.limitePredefinito, credito: consumi.creditoAttivo(), prezzo: consumi.prezzoLettura() } });
   } catch (e) { next(e); }
 });
 
@@ -57,12 +69,42 @@ r.patch('/:id', async (req, res, next) => {
     }
     const nome = testo(req.body.nome, 150);
     if (nome) await pool.query('UPDATE aziende SET nome=$1 WHERE id=$2', [nome, id]);
+    // tetto mensile della lettura intelligente: '' = valore predefinito, 0 = spenta
+    if (req.body.limiteAi !== undefined) {
+      const v = String(req.body.limiteAi).trim().replace(',', '.');
+      if (v === '') await pool.query('UPDATE aziende SET limite_ai_mese=NULL WHERE id=$1', [id]);
+      else {
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0 || n > 100000) return res.status(400).json({ errore: 'Limite non valido: scrivi un importo in dollari, per esempio 20.' });
+        await pool.query('UPDATE aziende SET limite_ai_mese=$1 WHERE id=$2', [Math.round(n * 100) / 100, id]);
+      }
+    }
     if (req.body.funzioni && typeof req.body.funzioni === 'object') {
       const f = {};
       FUNZIONI.forEach((x) => { if (typeof req.body.funzioni[x.id] === 'boolean') f[x.id] = req.body.funzioni[x.id]; });
       await pool.query('UPDATE aziende SET funzioni = funzioni || $1::jsonb WHERE id=$2', [JSON.stringify(f), id]);
     }
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// ---------- Credito della lettura intelligente ----------
+r.get('/:id/credito', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    res.json({ saldo: await consumi.saldo(id), prezzo: consumi.prezzoLettura(), movimenti: await consumi.movimenti(id, 20) });
+  } catch (e) { next(e); }
+});
+// Ricarica (importo positivo, es. 50 dopo il pagamento del pacchetto) o correzione (importo negativo)
+r.post('/:id/credito', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const { rows } = await pool.query('SELECT 1 FROM aziende WHERE id=$1', [id]);
+    if (!rows.length) return res.status(404).json({ errore: 'Azienda non trovata.' });
+    const importo = Number(String(req.body.importo || '').trim().replace(',', '.'));
+    if (!Number.isFinite(importo) || importo === 0 || Math.abs(importo) > 100000) return res.status(400).json({ errore: 'Importo non valido: scrivi quanti euro caricare, per esempio 50.' });
+    await consumi.ricarica(id, Math.round(importo * 100) / 100, testo(req.body.nota, 200), req.utente.id);
+    res.json({ ok: true, saldo: await consumi.saldo(id) });
   } catch (e) { next(e); }
 });
 

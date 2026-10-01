@@ -115,6 +115,33 @@ async function inizializza() {
     CREATE INDEX IF NOT EXISTS idx_mezzi_azienda ON mezzi(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_colli_azienda ON colli_salvati(azienda_id);
     CREATE INDEX IF NOT EXISTS idx_piani_azienda ON piani(azienda_id);
+    -- Lettura intelligente a pagamento: tetto di spesa mensile (dollari) e registro di ogni lettura
+    ALTER TABLE aziende ADD COLUMN IF NOT EXISTS limite_ai_mese NUMERIC(8,2);
+    CREATE TABLE IF NOT EXISTS consumi_ai (
+      id BIGSERIAL PRIMARY KEY,
+      azienda_id INT REFERENCES aziende(id) ON DELETE CASCADE,
+      utente_id INT REFERENCES utenti(id) ON DELETE SET NULL,
+      funzione TEXT NOT NULL,
+      fornitore TEXT NOT NULL,
+      modello TEXT,
+      tok_in INT,
+      tok_out INT,
+      costo_usd NUMERIC(10,5) NOT NULL DEFAULT 0,
+      creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_consumi_ai_azienda ON consumi_ai(azienda_id, creato_il);
+    CREATE INDEX IF NOT EXISTS idx_consumi_ai_data ON consumi_ai(creato_il);
+    -- Credito prepagato delle aziende per la lettura intelligente (euro): ricariche (+) e letture (-)
+    CREATE TABLE IF NOT EXISTS crediti_ai (
+      id BIGSERIAL PRIMARY KEY,
+      azienda_id INT NOT NULL REFERENCES aziende(id) ON DELETE CASCADE,
+      utente_id INT REFERENCES utenti(id) ON DELETE SET NULL,
+      tipo TEXT NOT NULL,
+      importo NUMERIC(10,4) NOT NULL,
+      nota TEXT,
+      creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_crediti_ai_azienda ON crediti_ai(azienda_id, creato_il);
   `);
   // Primo avvio del registro: ricostruisce lo storico dai piani e viaggi già salvati
   const vuoto = await pool.query('SELECT 1 FROM attivita LIMIT 1');

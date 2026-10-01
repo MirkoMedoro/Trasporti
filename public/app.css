@@ -482,3 +482,20 @@ tr.da-controllare td:first-child { box-shadow: inset 4px 0 0 var(--giallo-scuro)
 .controllo-totali { margin: 6px 0; font-weight: 600; }
 .controllo-totali .ok { color: var(--verde); }
 .controllo-totali .no { color: var(--rosso); }
+
+/* Prova lettura (super amministratore) */
+.lettori-prova { display: grid; gap: 8px; margin: 8px 0 12px; }
+.lettori-prova .spento { opacity: .55; }
+.prova-foto img { max-width: 100%; max-height: 420px; display: block; margin: 0 auto; border: 1px solid var(--linea, #e1e4e8); border-radius: 6px; }
+.griglia-prova { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.scheda-prova h3 { margin: 0; }
+.scheda-prova .pl-stato { margin: 6px 0 8px; }
+.tab-colli td.diversa { background: #fff1b8; font-weight: 600; }
+.spesa-ai { white-space: nowrap; line-height: 1.35; }
+.spesa-ai b.no { color: #c8341e; }
+
+/* Calcolatore: scelta del lettore */
+.scelta-lettura { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 10px 0 8px; }
+.scelta-lettura .btn { flex-direction: column; align-items: flex-start; text-align: left; height: auto; padding: 12px 14px; gap: 2px; }
+.scelta-lettura .btn small { font-weight: 400; font-size: 13px; opacity: .8; }
+.avviso-dubbi { background: #fff4d6; border-left: 3px solid #f5b800; padding: 8px 10px; border-radius: 4px; }

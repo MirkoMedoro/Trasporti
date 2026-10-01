@@ -480,7 +480,42 @@
     return migliore || { modo: 'righe', righe: [] };
   }
 
-  var api = { estraiMisure: estraiMisure, migliore: migliore, _daRiga: daRiga };
+  // Lettura mista: la lettura gratuita è affidabile? Restituisce l'elenco dei dubbi (vuoto = tutto a posto).
+  // Con almeno un dubbio il Calcolatore rilegge la foto con la lettura intelligente.
+  function dubbi(ris) {
+    var d = [], righe = (ris && ris.righe) || [];
+    if (!righe.length) return ['nessuna misura trovata'];
+    var gialle = righe.filter(function (r) { return r.incompleta; }).length;
+    if (gialle) d.push(gialle === 1 ? '1 riga poco leggibile' : gialle + ' righe poco leggibili');
+    var t = ris.totali;
+    if (t && t.colliOk === false) d.push('i colli non tornano con il Totale del foglio');
+    if (t && t.pesoOk === false) d.push('il peso non torna con il Totale del foglio');
+    var strane = 0;
+    righe.forEach(function (r) {
+      var n = Number(r.n) || 1, l = Number(r.l), p = Number(r.p), h = Number(r.h), peso = r.peso === '' ? null : Number(r.peso);
+      // misure fuori dal mondo reale (più lunghe di un bilico o di pochi millimetri)
+      if ([l, p, h].some(function (x) { return !(x >= 1 && x <= 1400); })) { strane++; return; }
+      if (n > 50) { strane++; return; }
+      if (peso != null) {
+        // peso e misure scambiati: densità impossibile per un collo (kg/m³)
+        var densita = peso / (l * p * h / 1e6);
+        if (peso > 5000 || densita > 3000 || densita < 2) strane++;
+      }
+    });
+    if (strane) d.push(strane === 1 ? '1 riga con valori poco credibili' : strane + ' righe con valori poco credibili');
+    // la riga Totale letta come un collo: l'ultima riga è la somma delle altre
+    if (righe.length >= 3) {
+      var ultima = righe[righe.length - 1], altre = righe.slice(0, -1);
+      var sommaColli = altre.reduce(function (a, r) { return a + (Number(r.n) || 1); }, 0);
+      var sommaPeso = altre.reduce(function (a, r) { return a + (r.peso === '' ? 0 : Number(r.peso) * (Number(r.n) || 1)); }, 0);
+      var pesoUltima = ultima.peso === '' ? null : Number(ultima.peso);
+      if ((pesoUltima != null && sommaPeso > 0 && Math.abs(pesoUltima - sommaPeso) <= Math.max(1, sommaPeso * 0.01)) ||
+          (Number(ultima.n) > 1 && Number(ultima.n) === sommaColli)) d.push('l’ultima riga sembra il Totale del foglio');
+    }
+    return d;
+  }
+
+  var api = { estraiMisure: estraiMisure, migliore: migliore, dubbi: dubbi, _daRiga: daRiga };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else globale.Misure = api;
 })(this);

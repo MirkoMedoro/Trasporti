@@ -23,7 +23,7 @@ const leggiJson = express.json({ limit: '5mb' });
 const leggiDocumenti = express.json({ limit: '30mb' });
 app.use((req, res, next) => {
   if (req.path === '/api/backup/ripristina') return next();
-  if (req.path === '/api/giri/leggi' || req.path === '/api/foto/leggi' || req.path.startsWith('/api/foto/telefono/')) return leggiDocumenti(req, res, next);
+  if (req.path === '/api/giri/leggi' || req.path === '/api/foto/leggi' || req.path === '/api/foto/prova' || req.path.startsWith('/api/foto/telefono/')) return leggiDocumenti(req, res, next);
   return leggiJson(req, res, next);
 });
 app.use(cookieParser());

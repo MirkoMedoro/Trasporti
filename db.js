@@ -142,6 +142,26 @@ async function inizializza() {
       creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_crediti_ai_azienda ON crediti_ai(azienda_id, creato_il);
+    -- Chat interna tra gli utenti della stessa azienda. Messaggi di servizio: si cancellano da soli dopo 2 giorni.
+    -- destinatario_id NULL = canale "Tutti" dell'azienda. Non finisce nel backup e nessuna pagina la mostra ad altri.
+    CREATE TABLE IF NOT EXISTS chat_messaggi (
+      id BIGSERIAL PRIMARY KEY,
+      azienda_id INT NOT NULL REFERENCES aziende(id) ON DELETE CASCADE,
+      mittente_id INT NOT NULL REFERENCES utenti(id) ON DELETE CASCADE,
+      destinatario_id INT REFERENCES utenti(id) ON DELETE CASCADE,
+      testo TEXT NOT NULL DEFAULT '',
+      allegato JSONB,
+      foto TEXT,
+      creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_azienda ON chat_messaggi(azienda_id, id);
+    CREATE INDEX IF NOT EXISTS idx_chat_data ON chat_messaggi(creato_il);
+    CREATE TABLE IF NOT EXISTS chat_letture (
+      utente_id INT NOT NULL REFERENCES utenti(id) ON DELETE CASCADE,
+      conversazione TEXT NOT NULL,
+      ultimo_id BIGINT NOT NULL DEFAULT 0,
+      PRIMARY KEY (utente_id, conversazione)
+    );
   `);
   // Primo avvio del registro: ricostruisce lo storico dai piani e viaggi già salvati
   const vuoto = await pool.query('SELECT 1 FROM attivita LIMIT 1');

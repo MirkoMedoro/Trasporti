@@ -11,6 +11,7 @@
   };
 
   var ICONE = {
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
     home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>',
     carico: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="14" height="11"/><path d="M16 10h3.5l2.5 3v4h-6"/><circle cx="6" cy="18.5" r="1.8"/><circle cx="18" cy="18.5" r="1.8"/><path d="M5 9h4v4H5zM9 9h4v4H9z"/></svg>',
     mezzi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17V7h12v10M15 10h4l2 3v4h-2"/><circle cx="7" cy="17.5" r="2"/><circle cx="17" cy="17.5" r="2"/><path d="M9 17.5h6"/></svg>',
@@ -127,6 +128,7 @@
 
   function mostraAccesso() {
     chiudi3D();
+    togliChat();
     api('GET', '/api/setup').then(function (s) {
       if (s.serveSetup) {
         paginaAccesso('Primo avvio', 'Crea il tuo account da amministratore. Da qui gestirai le aziende clienti.',
@@ -3279,6 +3281,216 @@
     guscio('', '<div class="vuoto"><h2>Qualcosa non ha funzionato</h2><p>' + esc(err.message) + '</p><a class="btn" href="#/">Torna alla home</a></div>');
   }
 
+
+  // ---------- Messaggi (chat interna dell'azienda) ----------
+  // Pallino dei non letti nel menu: si aggiorna ogni 20 secondi
+  function aggiornaPallino(n) {
+    stato.chatNonLetti = n;
+    document.querySelectorAll('#ch-fab .pallino-chat').forEach(function (b) { b.textContent = n > 99 ? '99+' : (n || ''); b.hidden = !n; });
+    document.title = (n ? '(' + n + ') ' : '') + 'Stiva';
+  }
+  function avviaContaMessaggi() {
+    if (stato.timerPallino) clearInterval(stato.timerPallino);
+    stato.timerPallino = null;
+    if (!stato.utente || stato.utente.ruolo === 'superadmin' || !haFunzione('chat')) { togliChat(); return; }
+    chatWidget();
+    contaNonLetti();
+    stato.timerPallino = setInterval(function () { if (stato.utente) contaNonLetti(); }, 20000);
+  }
+  function suonoMessaggio() {
+    try {
+      var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      var a = stato.audio || (stato.audio = new C()), o = a.createOscillator(), g = a.createGain();
+      o.frequency.value = 880; g.gain.setValueAtTime(0.0001, a.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.15, a.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + 0.25);
+      o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + 0.26);
+    } catch (e) {}
+  }
+  function riduciFoto(file) {
+    return new Promise(function (ok, ko) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        var c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); ko(new Error('Non riesco ad aprire la foto.')); };
+      img.src = url;
+    });
+  }
+  function orarioChat(iso) {
+    var d = new Date(iso), oggi = new Date(), ieri = new Date(); ieri.setDate(oggi.getDate() - 1);
+    var ora = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    if (d.toDateString() === oggi.toDateString()) return ora;
+    if (d.toDateString() === ieri.toDateString()) return 'ieri ' + ora;
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }) + ' ' + ora;
+  }
+
+  // La chat vive in un pulsante fisso in basso a destra, fuori dalle pagine: resta aperta mentre si naviga
+  function togliChat() {
+    if (stato.timerChat) { clearInterval(stato.timerChat); stato.timerChat = null; }
+    if (stato.timerPallino) { clearInterval(stato.timerPallino); stato.timerPallino = null; }
+    var w = document.getElementById('chat-widget'); if (w) w.remove();
+    document.title = 'Stiva';
+  }
+  function chatWidget() {
+    var w = document.getElementById('chat-widget');
+    if (w) return w;
+    w = document.createElement('div'); w.id = 'chat-widget';
+    w.innerHTML =
+      '<button type="button" class="chat-fab" id="ch-fab" aria-label="Messaggi" aria-expanded="false">' + ICONE.chat + '<b class="pallino-chat" hidden></b></button>' +
+      '<section class="chat-pannello" id="ch-pannello" hidden aria-label="Messaggi">' +
+        '<div class="chat-testa">' +
+          '<button type="button" class="chat-indietro" id="ch-indietro" aria-label="Torna all’elenco" hidden>←</button>' +
+          '<div class="chat-titoli"><b id="ch-titolo">Messaggi</b><div class="nota" id="ch-sotto">Si cancellano da soli dopo 2 giorni</div></div>' +
+          '<button type="button" class="chat-chiudi" id="ch-chiudi" aria-label="Chiudi">×</button>' +
+        '</div>' +
+        '<div class="chat-corpo" id="ch-corpo"></div>' +
+      '</section>';
+    document.body.appendChild(w);
+    var st = { chi: null, ultimoId: 0, io: null, allegato: null, primo: true, contatti: null };
+    var pannello = w.querySelector('#ch-pannello'), corpo = w.querySelector('#ch-corpo');
+    var titolo = w.querySelector('#ch-titolo'), sotto = w.querySelector('#ch-sotto'), indietro = w.querySelector('#ch-indietro');
+
+    function apri(si) {
+      pannello.hidden = !si; w.classList.toggle('aperta', si);
+      w.querySelector('#ch-fab').setAttribute('aria-expanded', si);
+      if (stato.timerChat) { clearInterval(stato.timerChat); stato.timerChat = null; }
+      if (si) { if (st.chi) apriConversazione(st.chi); else mostraElenco(); }
+    }
+    w.querySelector('#ch-fab').onclick = function () { apri(pannello.hidden); };
+    w.querySelector('#ch-chiudi').onclick = function () { apri(false); };
+    indietro.onclick = function () { mostraElenco(); };
+
+    var iniziali = function (n) { return esc(String(n || '?').split(/\s+/).map(function (p) { return p[0]; }).join('').slice(0, 2).toUpperCase()); };
+    function mostraElenco() {
+      st.chi = null; indietro.hidden = true;
+      titolo.textContent = 'Messaggi'; sotto.textContent = 'Si cancellano da soli dopo 2 giorni';
+      if (stato.timerChat) { clearInterval(stato.timerChat); stato.timerChat = null; }
+      corpo.innerHTML = '<div class="chat-elenco"><p class="nota" style="padding:14px">Carico…</p></div>';
+      var disegna = function () {
+        return api('GET', '/api/chat/contatti').then(function (d) {
+          st.io = d.io; st.contatti = d;
+          if (st.chi !== null || pannello.hidden) return;
+          var voce = function (id, nome, sub, n, icona) {
+            return '<button type="button" class="chat-voce" data-chi="' + id + '"><span class="chat-avatar' + (id === 'tutti' ? ' tutti' : '') + '">' + icona + '</span>' +
+              '<span class="chat-nome"><b>' + esc(nome) + '</b><small>' + esc(sub) + '</small></span>' + (n ? '<b class="pallino-chat">' + n + '</b>' : '') + '</button>';
+          };
+          corpo.innerHTML = '<div class="chat-elenco">' + voce('tutti', 'Tutti', 'Tutto l’ufficio', d.tutti.nonLetti, ICONE.utenti) +
+            (d.colleghi.length ? '<div class="chat-sezione">Colleghi</div>' + d.colleghi.map(function (c) { return voce(c.id, c.nome, c.ruolo === 'admin' ? 'Titolare' : 'Operatore', c.nonLetti, iniziali(c.nome)); }).join('')
+              : '<p class="nota" style="padding:14px">Non ci sono ancora colleghi: il titolare li aggiunge dalla pagina Utenti.</p>') +
+            '<p class="chat-privacy">I messaggi privati li leggete solo voi due: nessun altro può vederli, nemmeno il titolare.</p></div>';
+          corpo.querySelectorAll('[data-chi]').forEach(function (b) { b.onclick = function () { apriConversazione(b.dataset.chi); }; });
+        });
+      };
+      disegna().catch(function (e) { corpo.innerHTML = '<p class="errore" style="padding:14px">' + esc(e.message) + '</p>'; });
+      stato.timerChat = setInterval(function () { disegna().catch(function () {}); contaNonLetti(); }, 8000);
+    }
+
+    function bolla(m) {
+      var mio = m.mittente_id === st.io, a = m.allegato;
+      var all = a ? '<a class="chat-scheda" href="#/' + (a.tipo === 'piano' ? 'piani' : 'viaggi') + '/' + a.id + '">' +
+        (a.tipo === 'piano' ? ICONE.carico : ICONE.viaggi) + '<span><small>' + (a.tipo === 'piano' ? 'Piano di carico' : 'Viaggio') + '</small><b>' + esc(a.nome) + '</b></span></a>' : '';
+      var foto = m.ha_foto ? '<button type="button" class="chat-foto" data-foto="' + m.id + '"><img src="/api/chat/foto/' + m.id + '" alt="Foto mandata da ' + esc(m.mittente) + '" loading="lazy"></button>' : '';
+      return '<div class="chat-msg' + (mio ? ' mio' : '') + '">' + (mio || st.chi !== 'tutti' ? '' : '<div class="chat-chi">' + esc(m.mittente) + '</div>') +
+        foto + all + (m.testo ? '<div class="chat-testo">' + esc(m.testo).replace(/\n/g, '<br>') + '</div>' : '') + '<div class="chat-ora">' + orarioChat(m.creato_il) + '</div></div>';
+    }
+
+    function apriConversazione(chi) {
+      st.chi = String(chi); st.ultimoId = 0; st.primo = true; st.allegato = null;
+      if (stato.timerChat) { clearInterval(stato.timerChat); stato.timerChat = null; }
+      indietro.hidden = false;
+      var c = st.contatti && st.contatti.colleghi.filter(function (x) { return String(x.id) === st.chi; })[0];
+      titolo.textContent = st.chi === 'tutti' ? 'Tutti' : (c ? c.nome : 'Messaggio privato');
+      sotto.textContent = st.chi === 'tutti' ? 'Messaggi per tutto l’ufficio' : 'Privato · lo leggete solo voi due';
+      corpo.innerHTML =
+        '<div class="chat-messaggi" id="ch-messaggi" aria-live="polite"></div>' +
+        '<div class="chat-scelta" id="ch-scelta" hidden></div>' +
+        '<div class="chat-allegato" id="ch-allegato" hidden></div>' +
+        '<form class="chat-scrivi" id="ch-form">' +
+          '<label class="btn-icona" title="Manda una foto" aria-label="Manda una foto"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><input type="file" id="ch-foto" accept="image/*" hidden></label>' +
+          '<button type="button" class="btn-icona" id="ch-allega" title="Allega un piano di carico o un viaggio" aria-label="Allega un piano di carico o un viaggio"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 11.5l-8.5 8.5a5 5 0 0 1-7-7L13 4.5a3.3 3.3 0 0 1 4.7 4.7L9.3 17.6a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg></button>' +
+          '<textarea id="ch-testo" rows="1" placeholder="Scrivi un messaggio…" aria-label="Messaggio" maxlength="2000"></textarea>' +
+          '<button class="btn btn-primario" type="submit" id="ch-invia" aria-label="Invia"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-6z"/></svg></button>' +
+        '</form>';
+      var box = corpo.querySelector('#ch-messaggi'), form = corpo.querySelector('#ch-form'), testo = corpo.querySelector('#ch-testo');
+      var chiQui = st.chi;
+      function carica() {
+        return api('GET', '/api/chat/conversazione/' + encodeURIComponent(chiQui) + '?dopo=' + st.ultimoId).then(function (r) {
+          if (st.chi !== chiQui) return;
+          if (!r.messaggi.length) { if (st.primo) box.innerHTML = '<p class="chat-vuoto">Nessun messaggio negli ultimi 2 giorni. Scrivi tu il primo.</p>'; st.primo = false; return; }
+          var inFondo = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+          if (st.primo || box.querySelector('.chat-vuoto')) box.innerHTML = '';
+          var altrui = r.messaggi.some(function (m) { return m.mittente_id !== st.io; });
+          box.insertAdjacentHTML('beforeend', r.messaggi.map(bolla).join(''));
+          st.ultimoId = r.messaggi[r.messaggi.length - 1].id;
+          if (st.primo || inFondo) box.scrollTop = box.scrollHeight;
+          if (!st.primo && altrui) suonoMessaggio();
+          st.primo = false;
+          contaNonLetti();
+        });
+      }
+      var parti = (st.io ? Promise.resolve() : api('GET', '/api/chat/contatti').then(function (d) { st.io = d.io; st.contatti = d; }));
+      parti.then(carica).catch(function (e) { box.innerHTML = '<p class="errore">' + esc(e.message) + '</p>'; });
+      stato.timerChat = setInterval(function () { if (!pannello.hidden && st.chi === chiQui) carica().catch(function () {}); }, 4000);
+
+      function mostraAllegato() {
+        var b = corpo.querySelector('#ch-allegato'), al = st.allegato;
+        if (!al) { b.hidden = true; b.innerHTML = ''; return; }
+        b.hidden = false;
+        b.innerHTML = (al.foto ? '<img src="' + al.foto + '" alt="Foto da mandare">' : (al.tipo === 'piano' ? ICONE.carico : ICONE.viaggi)) +
+          '<span>' + (al.foto ? 'Foto pronta da mandare' : esc((al.tipo === 'piano' ? 'Piano di carico: ' : 'Viaggio: ') + al.nome)) + '</span><button type="button" class="btn-testo" id="ch-togli">Togli</button>';
+        b.querySelector('#ch-togli').onclick = function () { st.allegato = null; mostraAllegato(); };
+      }
+      corpo.querySelector('#ch-foto').onchange = function () {
+        var f = this.files[0]; this.value = '';
+        if (f) riduciFoto(f).then(function (u) { st.allegato = { foto: u }; mostraAllegato(); testo.focus(); }).catch(function (e) { avvisa(e.message); });
+      };
+      corpo.querySelector('#ch-allega').onclick = function () {
+        var sc = corpo.querySelector('#ch-scelta');
+        if (!sc.hidden) { sc.hidden = true; return; }
+        sc.hidden = false; sc.innerHTML = '<p class="nota">Carico…</p>';
+        api('GET', '/api/chat/allegabili').then(function (r) {
+          var riga = function (tipo, x) { return '<button type="button" data-tipo="' + tipo + '" data-id="' + x.id + '" data-nome="' + esc(x.nome) + '">' + (tipo === 'piano' ? ICONE.carico : ICONE.viaggi) + '<span>' + esc(x.nome) + '<small>' + data(x.creato_il) + '</small></span></button>'; };
+          sc.innerHTML = (r.piani.length ? '<div class="chat-sezione">Piani di carico salvati</div>' + r.piani.map(function (x) { return riga('piano', x); }).join('') : '') +
+            (r.viaggi.length ? '<div class="chat-sezione">Viaggi salvati</div>' + r.viaggi.map(function (x) { return riga('viaggio', x); }).join('') : '') +
+            (!r.piani.length && !r.viaggi.length ? '<p class="nota">Non ci sono ancora piani di carico o viaggi salvati da allegare.</p>' : '');
+          sc.querySelectorAll('[data-tipo]').forEach(function (b) {
+            b.onclick = function () { st.allegato = { tipo: b.dataset.tipo, id: Number(b.dataset.id), nome: b.dataset.nome }; sc.hidden = true; mostraAllegato(); testo.focus(); };
+          });
+        }).catch(function (e) { sc.innerHTML = '<p class="errore">' + esc(e.message) + '</p>'; });
+      };
+      testo.oninput = function () { testo.style.height = 'auto'; testo.style.height = Math.min(120, testo.scrollHeight) + 'px'; };
+      testo.onkeydown = function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); invia(); } };
+      form.onsubmit = function (e) { e.preventDefault(); invia(); };
+      function invia() {
+        var t = testo.value.trim(), al = st.allegato;
+        if (!t && !al) return;
+        var dati = { testo: t };
+        if (al && al.foto) dati.foto = al.foto; else if (al) dati.allegato = { tipo: al.tipo, id: al.id };
+        var b = corpo.querySelector('#ch-invia'); b.disabled = true;
+        api('POST', '/api/chat/conversazione/' + encodeURIComponent(chiQui), dati).then(function () {
+          testo.value = ''; testo.style.height = ''; st.allegato = null; mostraAllegato();
+          return carica();
+        }).catch(function (err) { avvisa(err.message); }).then(function () { b.disabled = false; testo.focus(); });
+      }
+      box.addEventListener('click', function (e) {
+        var f = e.target.closest('[data-foto]'); if (!f) return;
+        var d = document.createElement('div'); d.className = 'chat-zoom';
+        d.innerHTML = '<img src="/api/chat/foto/' + f.dataset.foto + '" alt="Foto ingrandita"><button type="button" class="btn">Chiudi</button>';
+        d.onclick = function () { d.remove(); };
+        document.body.appendChild(d);
+      });
+      setTimeout(function () { testo.focus(); }, 50);
+    }
+    return w;
+  }
+  function contaNonLetti() {
+    return fetch('/api/chat/non-letti', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) aggiornaPallino(d.n); }).catch(function () {});
+  }
+
   // ---------- navigazione ----------
   function naviga() {
     if (!stato.utente) return;
@@ -3313,6 +3525,7 @@
       stato.utente = u;
       if (dopoLogin !== true) traccia('sessione');
       naviga();
+      avviaContaMessaggi();
     });
   }
 

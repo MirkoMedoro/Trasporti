@@ -238,6 +238,21 @@ Su Railway aggiungi nelle **Variables** `ANTHROPIC_API_KEY` con una chiave
 creata su **https://platform.claude.com** (a pagamento, pochi centesimi a
 distinta). Con la chiave compare la spunta "Lettura intelligente".
 
+## Messaggi (chat interna)
+
+In basso a destra, in ogni pagina, c'è il pulsante dei **Messaggi** con il
+pallino dei non letti. Si scrive a **Tutti** (tutto l'ufficio) o a un collega
+in privato; si possono mandare foto e allegare un **piano di carico** o un
+**viaggio** salvato (il collega lo apre con un clic).
+
+- Ogni azienda vede solo i propri colleghi.
+- **Privacy**: un messaggio privato lo leggono solo le due persone che si
+  scrivono. Il titolare non vede le conversazioni degli altri e il super
+  amministratore non ha nessuna pagina per leggerle; la chat non entra nel backup.
+- Sono messaggi di servizio: **si cancellano da soli dopo 2 giorni**.
+- I messaggi arrivano mentre Stiva è aperta (anche in un'altra scheda).
+- Si può spegnere per un cliente dalla lista Aziende clienti (funzione "Messaggi").
+
 ## Backup dei dati
 
 Dal pannello del super amministratore, voce **Backup**:

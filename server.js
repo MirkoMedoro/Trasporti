@@ -63,5 +63,6 @@ inizializza()
     pulisci();
     setInterval(pulisci, 24 * 60 * 60 * 1000);
     app.listen(PORT, () => console.log(`Stiva avviato sulla porta ${PORT}`));
+    require('./avvisi').avvia();   // avvisi delle revisioni per email
   })
   .catch((e) => { console.error('Impossibile preparare il database:', e); process.exit(1); });

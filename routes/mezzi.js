@@ -1,7 +1,7 @@
 // Flotta dell'azienda: furgoni, motrici, trattori, semirimorchi, rimorchi
 const express = require('express');
 const { pool } = require('../db');
-const { richiediLogin, richiediAzienda } = require('../auth');
+const { richiediLogin, richiediAzienda, richiediRuolo } = require('../auth');
 const { intero, testo } = require('../validazione');
 const { registra } = require('../attivita');
 
@@ -66,7 +66,8 @@ r.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-r.post('/', async (req, res, next) => {
+// Inserire, modificare ed eliminare i mezzi: solo il titolare
+r.post('/', richiediRuolo('admin'), async (req, res, next) => {
   try {
     const { m, errore } = leggiMezzo(req.body);
     if (errore) return res.status(400).json({ errore });
@@ -78,7 +79,7 @@ r.post('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-r.put('/:id', async (req, res, next) => {
+r.put('/:id', richiediRuolo('admin'), async (req, res, next) => {
   try {
     const { m, errore } = leggiMezzo(req.body);
     if (errore) return res.status(400).json({ errore });
@@ -99,7 +100,7 @@ r.put('/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Registrazione rapida di una revisione appena fatta (dallo scadenziario)
+// Registrazione rapida di una revisione appena fatta (dallo scadenziario): la può fare anche l'operatore
 r.patch('/:id/revisione', async (req, res, next) => {
   try {
     const fatta = data(req.body.ultima_revisione), scad = data(req.body.scadenza_revisione);
@@ -114,7 +115,7 @@ r.patch('/:id/revisione', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-r.delete('/:id', async (req, res, next) => {
+r.delete('/:id', richiediRuolo('admin'), async (req, res, next) => {
   try {
     await pool.query('DELETE FROM mezzi WHERE id=$1 AND azienda_id=$2', [Number(req.params.id), req.utente.azienda_id]);
     res.json({ ok: true });

@@ -162,6 +162,22 @@ async function inizializza() {
       ultimo_id BIGINT NOT NULL DEFAULT 0,
       PRIMARY KEY (utente_id, conversazione)
     );
+    -- Avvisi delle revisioni mandati per email: serve a non mandare due volte lo stesso avviso.
+    -- chiave = 'm:<mezzo>:<scadenza>:<giorni>' per gli avvisi del singolo mezzo, 'mese:<azienda>:<AAAA-MM>' per il riepilogo.
+    CREATE TABLE IF NOT EXISTS avvisi_inviati (
+      id BIGSERIAL PRIMARY KEY,
+      chiave TEXT NOT NULL UNIQUE,
+      azienda_id INT NOT NULL REFERENCES aziende(id) ON DELETE CASCADE,
+      mezzo_id INT REFERENCES mezzi(id) ON DELETE SET NULL,
+      tipo TEXT NOT NULL,
+      oggetto TEXT,
+      destinatari TEXT,
+      esito TEXT NOT NULL DEFAULT 'in_corso',
+      errore TEXT,
+      tentativi INT NOT NULL DEFAULT 1,
+      creato_il TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_avvisi_azienda ON avvisi_inviati(azienda_id, creato_il);
   `);
   // Primo avvio del registro: ricostruisce lo storico dai piani e viaggi già salvati
   const vuoto = await pool.query('SELECT 1 FROM attivita LIMIT 1');

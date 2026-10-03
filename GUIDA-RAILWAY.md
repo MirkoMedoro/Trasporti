@@ -253,6 +253,33 @@ in privato; si possono mandare foto e allegare un **piano di carico** o un
 - I messaggi arrivano mentre Stiva è aperta (anche in un'altra scheda).
 - Si può spegnere per un cliente dalla lista Aziende clienti (funzione "Messaggi").
 
+## Avvisi delle revisioni per email (Scadenze)
+
+Il titolare di ogni azienda, in fondo alla pagina **Scadenze**, sceglie chi riceve le email (es. revisioni@azienda.it) e quali avvisi mandare:
+- **il primo di ogni mese**: il riepilogo delle revisioni che scadono questo mese e il prossimo (più quelle già scadute);
+- per ogni mezzo: **60 giorni prima** (fissare prova e revisione), **30 giorni** (prove fatte? revisione fatta?), **10 giorni**, **7 giorni**, **il giorno prima** (portare il mezzo alla revisione).
+
+Le email partono dopo le 7 di mattina. Quando si registra la revisione, gli avvisi di quel mezzo si fermano e ripartono per la scadenza nuova.
+Gli avvisi email li vede e li cambia solo il titolare. Le revisioni fatte le può registrare anche l'operatore (Scadenze → Registra revisione), ma inserire, modificare o eliminare i mezzi e i complessi veicolari lo può fare solo il titolare.
+
+**Attivazione (una volta sola, la fai tu):** Railway (piano Hobby) blocca l'invio diretto delle email, quindi serve un servizio di invio. Scegline uno:
+
+| Servizio | Gratis | Variabile da mettere su Railway |
+|---|---|---|
+| Resend (resend.com) | 3.000 email al mese | `RESEND_API_KEY` |
+| Brevo (brevo.com, europeo) | 300 email al giorno | `BREVO_API_KEY` |
+
+1. Crea l'account sul servizio e **verifica il tuo dominio** (ti dà dei record DNS da copiare dove hai comprato il dominio).
+2. Crea la chiave API.
+3. Su Railway → servizio Stiva → **Variables** aggiungi:
+   - `RESEND_API_KEY` (oppure `BREVO_API_KEY`) = la chiave
+   - `EMAIL_MITTENTE` = l'indirizzo da cui partono, del dominio verificato (es. `avvisi@tuodominio.it`)
+   - facoltativo `EMAIL_NOME_MITTENTE` = nome che si vede (predefinito "Stiva")
+   - facoltativo `URL_STIVA` = indirizzo del sito, per il pulsante nelle email (se manca usa quello di Railway)
+4. Nella pagina Scadenze premi **Manda un'email di prova**.
+
+Finché il servizio non è attivo, i titolari vedono il pannello con l'avviso "deve attivarlo l'amministratore di Stiva".
+
 ## Backup dei dati
 
 Dal pannello del super amministratore, voce **Backup**:

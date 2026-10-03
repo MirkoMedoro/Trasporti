@@ -565,3 +565,27 @@ tr.da-controllare td:first-child { box-shadow: inset 4px 0 0 var(--giallo-scuro)
   .chat-scrivi { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
 }
 @media print { #chat-widget { display: none !important; } }
+
+/* Avvisi delle revisioni per email (pagina Scadenze, solo titolare) */
+.pannello-avvisi { margin-top: 22px; }
+.pannello-avvisi h2 { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.pannello-avvisi h2 svg { width: 22px; height: 22px; }
+.pannello-avvisi > .testata-pannello { margin-bottom: 16px; }
+.pannello-avvisi .avviso { margin: 0 0 16px; }
+.avvisi-griglia { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 22px; margin-bottom: 14px; }
+.avvisi-griglia textarea { width: 100%; font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid #c9ced4; border-radius: 3px; resize: vertical; }
+.avvisi-griglia .campo-titolo { display: block; font-size: 13px; color: var(--grigio); font-weight: 500; margin-bottom: 6px; }
+.lista-avvisi { display: flex; flex-direction: column; gap: 7px; }
+.lista-avvisi .spunta { align-items: flex-start; }
+.lista-avvisi .spunta input { margin-top: 2px; flex: none; }
+.avvisi-colonne { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--linea); }
+.avvisi-colonne h3 { margin-bottom: 10px; }
+.calendario-avvisi, .elenco-inviati { list-style: none; margin: 0; padding: 0; }
+.calendario-avvisi li { display: flex; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--linea); font-size: 14px; }
+.calendario-avvisi .giorno { flex: none; width: 46px; text-align: center; line-height: 1.05; font-size: 12px; color: var(--grigio); text-transform: uppercase; border: 1px solid var(--linea); border-radius: 6px; padding: 4px 0; }
+.calendario-avvisi .giorno b { display: block; font-size: 18px; color: var(--inchiostro); }
+.calendario-avvisi li.mensile .giorno { background: var(--giallo); border-color: var(--giallo); color: var(--nero); }
+.elenco-inviati li { display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--linea); font-size: 13px; }
+.elenco-inviati .quando { flex: none; color: var(--grigio); width: 92px; }
+.elenco-inviati li.non-inviato { color: var(--rosso); }
+@media (max-width: 760px) { .avvisi-griglia, .avvisi-colonne { grid-template-columns: 1fr; } }

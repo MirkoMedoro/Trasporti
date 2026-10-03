@@ -407,6 +407,16 @@
             : '<p class="nota">Per creare un complesso inserisci prima una motrice e un rimorchio, oppure un trattore e un semirimorchio.</p>') +
         '</section>');
 
+      // I dati dei mezzi li inserisce e modifica solo il titolare: l'operatore vede la flotta in sola lettura
+      if (stato.utente.ruolo !== 'admin') {
+        main.querySelectorAll('#form-mezzo, #form-complesso, #err-c, [data-mod], [data-del], [data-delc]').forEach(function (x) { x.remove(); });
+        var nc = main.querySelector('#complessi > .nota'); if (nc) nc.remove();
+        if (!flotta.complessi.length) { var sc = main.querySelector('#complessi'); if (sc) sc.remove(); }
+        main.querySelector('.testata').insertAdjacentHTML('afterend', '<p class="nota" style="margin:-6px 0 18px;font-size:15px">' + (mezzi.length
+          ? 'I dati dei mezzi li inserisce e modifica il titolare dell’azienda. Le revisioni fatte si registrano dalla pagina <a href="#/scadenze">Scadenze</a>.'
+          : 'Non ci sono ancora mezzi: li inserisce il titolare dell’azienda.') + '</p>');
+        return;
+      }
       var form = main.querySelector('#form-mezzo');
       var selCat = main.querySelector('#categoria');
       var selMod = main.querySelector('#modello');
@@ -2478,6 +2488,7 @@
     caricaMezzi().then(function (tutti) {
       var mezzi = tutti.filter(function (m) { return m.proprieta !== 'padroncino'; });
       var padroncini = tutti.length - mezzi.length;
+      var admin = stato.utente.ruolo === 'admin';
       var filtro = stato.filtroScadenze || 'tutte';
       var elenco = mezzi.map(function (m) { return { m: m, s: statoRevisione(m) }; });
       elenco.sort(function (a, b) {
@@ -2510,7 +2521,9 @@
           '</tbody></table></div>' +
           (padroncini ? '<p class="nota" style="margin-top:14px">' + (padroncini === 1 ? 'Un mezzo di padroncino non è incluso: la sua revisione non è gestita dall’azienda.' : padroncini + ' mezzi di padroncini non sono inclusi: la loro revisione non è gestita dall’azienda.') + '</p>' : '') +
           '<p class="nota" style="margin-top:6px">Mezzi pesanti e rimorchi oltre 3,5 t si revisionano ogni anno; i veicoli fino a 3,5 t dopo 4 anni dall’immatricolazione e poi ogni 2 anni. Fa sempre fede la carta di circolazione.</p>'
-          : '<div class="vuoto"><h2>Nessun mezzo inserito</h2><p>Aggiungi i mezzi della flotta con la data di scadenza della revisione.</p><a class="btn btn-primario" href="#/mezzi">Aggiungi un mezzo</a></div>'));
+          : '<div class="vuoto"><h2>Nessun mezzo inserito</h2><p>Aggiungi i mezzi della flotta con la data di scadenza della revisione.</p>' + (admin ? '<a class="btn btn-primario" href="#/mezzi">Aggiungi un mezzo</a>' : '') + '</div>') +
+        (admin ? '<div id="avvisi-email" class="no-stampa"></div>' : ''));
+      if (admin) pannelloAvvisi(main.querySelector('#avvisi-email'), mezzi);
 
       var st = main.querySelector('#stampa');
       if (st) st.onclick = function () { window.print(); };
@@ -2548,6 +2561,91 @@
         };
       });
     }).catch(errorePagina);
+  }
+
+  // Avvisi delle revisioni per email (solo il titolare): destinatari, quali avvisi e il calendario dei prossimi invii
+  var PASSI_AVVISO = [
+    ['mensile', 'Riepilogo il primo di ogni mese', 'le revisioni che scadono nei 2 mesi successivi'],
+    ['60', '60 giorni prima', 'scade la revisione: fissare la prova e prenotare la revisione'],
+    ['30', '30 giorni prima', 'prove fatte? revisione prenotata o fatta?'],
+    ['10', '10 giorni prima', 'controllare che l’appuntamento sia confermato'],
+    ['7', '7 giorni prima', 'manca una settimana'],
+    ['1', 'Il giorno prima', 'portare il mezzo alla revisione'],
+  ];
+  function pannelloAvvisi(box, mezzi) {
+    api('GET', '/api/impostazioni/avvisi').then(function (cfg) {
+      function attivo(k) { return k === 'mensile' ? cfg.mensile : cfg.giorni[k] !== false; }
+      box.innerHTML = '<section class="pannello pannello-avvisi">' +
+        '<div class="testata-pannello"><div><h2>' + ICONE.scadenze + ' Avvisi via email</h2>' +
+        '<p class="nota">Stiva manda da solo le email alle persone che si occupano delle revisioni, così non ci si dimentica nessuna scadenza. Solo tu, come titolare, vedi e cambi queste impostazioni.</p></div></div>' +
+        (cfg.servizioAttivo ? '' : '<div class="avviso">Il servizio email non è ancora attivo: deve attivarlo l’amministratore di Stiva. Intanto puoi già preparare indirizzi e avvisi.</div>') +
+        '<form id="f-avvisi" novalidate><div class="avvisi-griglia">' +
+          '<div><label class="campo">Chi riceve gli avvisi<textarea name="email" rows="4" placeholder="revisioni@azienda.it&#10;officina@azienda.it">' + esc(cfg.email.join('\n')) + '</textarea></label>' +
+          '<p class="nota">Un indirizzo per riga (fino a 10).</p></div>' +
+          '<div><span class="campo-titolo">Quali avvisi mandare</span><div class="lista-avvisi">' +
+            PASSI_AVVISO.map(function (p) {
+              return '<label class="spunta"><input type="checkbox" name="p' + p[0] + '"' + (attivo(p[0]) ? ' checked' : '') + '> <span><b>' + p[1] + '</b> – ' + p[2] + '</span></label>';
+            }).join('') +
+          '</div></div>' +
+        '</div>' +
+        '<div class="riga-azioni"><button class="btn btn-primario" type="submit">Salva gli avvisi</button>' +
+        '<button class="btn" type="button" id="prova-avvisi"' + (cfg.servizioAttivo ? '' : ' disabled') + '>Manda un’email di prova</button></div>' +
+        '<p class="errore" id="err-avvisi"></p></form>' +
+        '<div class="avvisi-colonne"><div><h3>Calendario dei prossimi avvisi</h3><div id="cal-avvisi"></div></div>' +
+        '<div><h3>Ultimi avvisi inviati</h3>' + (cfg.ultimi.length ? '<ul class="elenco-inviati">' + cfg.ultimi.slice(0, 8).map(function (u) {
+          return '<li class="' + (u.esito === 'errore' ? 'non-inviato' : '') + '"><span class="quando">' + new Date(u.creato_il).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</span>' +
+            '<span>' + esc(u.oggetto || '') + (u.esito === 'errore' ? '<br><b>Non inviato</b>: ' + esc(u.errore || '') : '') + '</span></li>';
+        }).join('') + '</ul>' : '<p class="nota">Nessun avviso inviato finora.</p>') + '</div></div>' +
+        '</section>';
+      var f = box.querySelector('#f-avvisi');
+      function leggi() {
+        var g = {};
+        ['60', '30', '10', '7', '1'].forEach(function (k) { g[k] = f.elements['p' + k].checked; });
+        return { email: f.elements.email.value.split(/[\s,;]+/).filter(Boolean), mensile: f.elements.pmensile.checked, giorni: g };
+      }
+      function calendario() {
+        var v = leggi(), oggi = oggiIso(), voci = [];
+        var d = new Date(oggi + 'T00:00:00'); d.setDate(1); d.setMonth(d.getMonth() + 1);
+        var d2 = new Date(d); d2.setMonth(d2.getMonth() + 1);
+        if (v.mensile) voci.push({ data: isoData(d), testo: '<b>Riepilogo del mese</b> – le revisioni di ' + d.toLocaleDateString('it-IT', { month: 'long' }) + ' e ' + d2.toLocaleDateString('it-IT', { month: 'long' }), mensile: true });
+        mezzi.forEach(function (m) {
+          if (!m.scadenza_revisione) return;
+          ['60', '30', '10', '7', '1'].forEach(function (k) {
+            if (!v.giorni[k]) return;
+            var q = new Date(m.scadenza_revisione + 'T00:00:00'); q.setDate(q.getDate() - Number(k));
+            var iso = isoData(q);
+            if (iso > oggi) voci.push({ data: iso, testo: '<b>' + esc(nomeMezzo(m)) + '</b> – ' + PASSI_AVVISO.filter(function (p) { return p[0] === k; })[0][2] + ' <span class="nota">(scade il ' + dataIt(m.scadenza_revisione) + ')</span>' });
+          });
+        });
+        voci.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
+        var el = box.querySelector('#cal-avvisi');
+        if (!v.email.length) { el.innerHTML = '<p class="nota">Aggiungi almeno un indirizzo email per attivare gli avvisi.</p>'; return; }
+        el.innerHTML = voci.length ? '<ul class="calendario-avvisi">' + voci.slice(0, 12).map(function (x) {
+          var dt = new Date(x.data + 'T00:00:00');
+          return '<li' + (x.mensile ? ' class="mensile"' : '') + '><span class="giorno"><b>' + dt.getDate() + '</b>' + dt.toLocaleDateString('it-IT', { month: 'short' }) + (x.data.slice(0, 4) !== oggi.slice(0, 4) ? ' ' + x.data.slice(2, 4) : '') + '</span><span>' + x.testo + '</span></li>';
+        }).join('') + '</ul>' + (voci.length > 12 ? '<p class="nota">e altri ' + (voci.length - 12) + ' avvisi più avanti.</p>' : '')
+          : '<p class="nota">Nessun avviso in programma: inserisci le scadenze delle revisioni dei mezzi.</p>';
+      }
+      calendario();
+      f.onchange = calendario;
+      f.elements.email.oninput = calendario;
+      f.onsubmit = function (e) {
+        e.preventDefault();
+        box.querySelector('#err-avvisi').textContent = '';
+        api('PUT', '/api/impostazioni/avvisi', leggi()).then(function () {
+          avvisa('Avvisi salvati');
+          pannelloAvvisi(box, mezzi);
+        }).catch(function (err) { box.querySelector('#err-avvisi').textContent = err.message; });
+      };
+      box.querySelector('#prova-avvisi').onclick = function () {
+        var b = this;
+        b.disabled = true; box.querySelector('#err-avvisi').textContent = '';
+        api('POST', '/api/impostazioni/avvisi/prova', { email: leggi().email }).then(function (r) {
+          avvisa('Email di prova mandata a ' + r.a.join(', '));
+        }).catch(function (err) { box.querySelector('#err-avvisi').textContent = err.message; })
+          .then(function () { b.disabled = false; });
+      };
+    }).catch(function (err) { box.innerHTML = '<p class="errore">' + esc(err.message) + '</p>'; });
   }
 
   // ---------- Finestra di conferma riutilizzabile ----------
@@ -2867,7 +2965,7 @@
   }
 
   // ---------- Backup (super amministratore) ----------
-  var NOMI_TABELLE = [['aziende', 'Aziende'], ['utenti', 'Utenti'], ['mezzi', 'Mezzi'], ['complessi', 'Complessi veicolari'], ['colli_salvati', 'Colli salvati'], ['piani', 'Piani di carico'], ['viaggi', 'Viaggi'], ['attivita', 'Registro attività'], ['consumi_ai', 'Letture intelligenti'], ['crediti_ai', 'Credito lettura intelligente']];
+  var NOMI_TABELLE = [['aziende', 'Aziende'], ['utenti', 'Utenti'], ['mezzi', 'Mezzi'], ['complessi', 'Complessi veicolari'], ['colli_salvati', 'Colli salvati'], ['piani', 'Piani di carico'], ['viaggi', 'Viaggi'], ['attivita', 'Registro attività'], ['consumi_ai', 'Letture intelligenti'], ['crediti_ai', 'Credito lettura intelligente'], ['avvisi_inviati', 'Avvisi revisioni inviati']];
 
   function dataOra(iso) {
     var d = new Date(iso);

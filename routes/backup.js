@@ -8,7 +8,7 @@ const r = express.Router();
 
 // Tabelle in ordine di dipendenza (chi viene prima è richiamato da chi viene dopo).
 // Se in futuro si aggiunge una tabella, va inserita qui.
-const TABELLE = ['aziende', 'utenti', 'mezzi', 'complessi', 'colli_salvati', 'piani', 'viaggi', 'attivita', 'consumi_ai', 'crediti_ai'];
+const TABELLE = ['aziende', 'utenti', 'mezzi', 'complessi', 'colli_salvati', 'piani', 'viaggi', 'attivita', 'consumi_ai', 'crediti_ai', 'avvisi_inviati'];
 const FORMATO = 'stiva-backup';
 const VERSIONE = 1;
 const CHIAVE = () => String(process.env.CHIAVE_CONFERMA || '1234');

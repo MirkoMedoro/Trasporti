@@ -1,7 +1,9 @@
 // Valori predefiniti dei costi, salvati per ogni azienda
 const express = require('express');
 const { pool } = require('../db');
-const { richiediLogin, richiediAzienda, richiediRuolo } = require('../auth');
+const { richiediLogin, richiediAzienda, richiediRuolo, richiediFunzione } = require('../auth');
+const avvisi = require('../avvisi');
+const email = require('../email');
 
 const r = express.Router();
 r.use(richiediLogin, richiediAzienda);
@@ -78,6 +80,54 @@ r.put('/giri', richiediRuolo('admin'), async (req, res, next) => {
       "UPDATE aziende SET impostazioni = jsonb_set(impostazioni, '{giri}', $1::jsonb, true) WHERE id=$2",
       [JSON.stringify(g), req.utente.azienda_id]);
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// Avvisi delle revisioni per email: li vede e li cambia solo il titolare
+r.get('/avvisi', richiediFunzione('scadenze'), richiediRuolo('admin'), async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT impostazioni FROM aziende WHERE id=$1', [req.utente.azienda_id]);
+    const imp = rows[0] && rows[0].impostazioni;
+    res.json({
+      ...avvisi.leggiImpostazioni(imp),
+      salvate: !!(imp && imp.avvisiRevisioni),
+      servizioAttivo: email.attivo(),
+      ultimi: await avvisi.ultimi(req.utente.azienda_id, 15),
+    });
+  } catch (e) { next(e); }
+});
+
+function leggiIndirizzi(v) {
+  const lista = (Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/)).map((x) => String(x).trim().toLowerCase()).filter(Boolean);
+  const sbagliati = lista.filter((x) => !email.EMAIL_VALIDA.test(x));
+  return { lista: [...new Set(lista)].filter((x) => email.EMAIL_VALIDA.test(x)).slice(0, 10), sbagliati };
+}
+
+r.put('/avvisi', richiediFunzione('scadenze'), richiediRuolo('admin'), async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const { lista, sbagliati } = leggiIndirizzi(b.email);
+    if (sbagliati.length) return res.status(400).json({ errore: 'Questo indirizzo email non è valido: ' + sbagliati[0] });
+    const giorni = {};
+    avvisi.PASSI.forEach((g) => { giorni[g] = !(b.giorni && b.giorni[g] === false); });
+    const v = { email: lista, mensile: b.mensile !== false, giorni };
+    await pool.query(
+      "UPDATE aziende SET impostazioni = jsonb_set(impostazioni, '{avvisiRevisioni}', $1::jsonb, true) WHERE id=$2",
+      [JSON.stringify(v), req.utente.azienda_id]);
+    res.json({ ok: true });
+    if (lista.length) avvisi.controlla().catch(() => {});   // se c'è già qualcosa da mandare, parte subito
+  } catch (e) { next(e); }
+});
+
+r.post('/avvisi/prova', richiediFunzione('scadenze'), richiediRuolo('admin'), async (req, res, next) => {
+  try {
+    if (!email.attivo()) return res.status(400).json({ errore: 'Il servizio email non è ancora attivo: deve attivarlo l’amministratore di Stiva.' });
+    const { lista, sbagliati } = leggiIndirizzi(req.body && req.body.email);
+    if (sbagliati.length) return res.status(400).json({ errore: 'Questo indirizzo email non è valido: ' + sbagliati[0] });
+    if (!lista.length) return res.status(400).json({ errore: 'Scrivi almeno un indirizzo email.' });
+    try { await avvisi.prova(req.utente.azienda_id, lista); }
+    catch (e) { return res.status(502).json({ errore: 'Email non inviata: ' + e.message }); }
+    res.json({ ok: true, a: lista });
   } catch (e) { next(e); }
 });
 
